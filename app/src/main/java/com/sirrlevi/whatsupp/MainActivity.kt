@@ -502,14 +502,14 @@ private fun EmptyHome(onAdd: () -> Unit, onManage: () -> Unit) {
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.ColumnScope.PlaceholderTab(title: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onNotify: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().weight(1f).padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+private fun PlaceholderTab(title: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onNotify: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(icon, null, tint = AppMuted, modifier = Modifier.size(48.dp))
         Spacer(Modifier.height(14.dp))
         Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(description, color = AppMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = { onNotify("This section is a visual placeholder in the chat conversation editor.") }) { Text("Got it") }
+        OutlinedButton(onClick = { onNotify("This section is reserved for future local views.") }) { Text("Got it") }
     }
 }
 
