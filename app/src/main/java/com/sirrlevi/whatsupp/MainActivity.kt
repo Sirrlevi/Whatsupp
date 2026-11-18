@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CameraAlt
@@ -282,67 +283,169 @@ private fun HomeScreen(
     var filter by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
     var showMenu by remember { mutableStateOf(false) }
+    var showArchived by remember { mutableStateOf(false) }
+    var selectedContact by remember { mutableStateOf<ContactEntity?>(null) }
+    val scope = rememberCoroutineScope()
     val latestMessages by produceState(initialValue = emptyMap<String, MessageEntity?>(), contacts, database) {
         value = contacts.associate { it.id to database.messageDao().latestForContact(it.id) }
     }
+    val archivedCount = contacts.count { it.isArchived }
+    val visibleContacts = contacts
+        .filter { it.isArchived == showArchived }
+        .filter { search.isBlank() || it.name.contains(search.trim(), true) || it.phone.contains(search.trim()) }
+        .filter { contact ->
+            when (filter) {
+                "Unread" -> latestMessages[contact.id]?.let { !it.outgoing && !it.isDeleted } == true
+                "Favorites" -> contact.isPinned
+                else -> true
+            }
+        }
+        .sortedWith(
+            compareByDescending<ContactEntity> { it.isPinned }
+                .thenByDescending { latestMessages[it.id]?.timestamp ?: it.createdAt }
+        )
+
     Column(Modifier.fillMaxSize().background(AppBg)) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Whatsupp", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = AppText, modifier = Modifier.weight(1f))
-            IconButton(onClick = { search = if (search.isEmpty()) " " else "" }) { Icon(Icons.Default.Search, null, tint = AppText) }
-            IconButton(onClick = onNewContact) { Icon(Icons.Default.Add, null, tint = AppText) }
+            if (showArchived) {
+                IconButton(onClick = { showArchived = false; search = ""; filter = "All" }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = AppText)
+                }
+                Text("Archived", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = AppText, modifier = Modifier.weight(1f))
+            } else {
+                Text("Whatsupp", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = AppText, modifier = Modifier.weight(1f))
+                IconButton(onClick = { onNotify("Camera preview is not connected; choose an image from a chat attachment instead.") }) {
+                    Icon(Icons.Default.CameraAlt, null, tint = AppText)
+                }
+                IconButton(onClick = onNewContact) { Icon(Icons.Default.Add, null, tint = AppText) }
+            }
             Box {
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, null, tint = AppText) }
                 androidx.compose.material3.DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Manage contacts") }, onClick = { showMenu = false; onManageContacts() }, leadingIcon = { Icon(Icons.Default.Contacts, null) })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Settings") }, onClick = { showMenu = false; onSettings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("About Whatsupp") }, onClick = { showMenu = false; onNotify("Whatsupp is a local chat conversation editor studio. Nothing is sent.") }, leadingIcon = { Icon(Icons.Default.Info, null) })
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Manage contacts") },
+                        onClick = { showMenu = false; onManageContacts() },
+                        leadingIcon = { Icon(Icons.Default.Contacts, null) }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Settings") },
+                        onClick = { showMenu = false; onSettings() },
+                        leadingIcon = { Icon(Icons.Default.Settings, null) }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("About Whatsupp") },
+                        onClick = { showMenu = false; onNotify("Whatsupp stores conversations locally on this device.") },
+                        leadingIcon = { Icon(Icons.Default.Info, null) }
+                    )
                 }
             }
         }
-        if (search.isNotEmpty()) {
-            OutlinedTextField(
-                value = if (search == " ") "" else search,
-                onValueChange = { search = it },
-                placeholder = { Text("Search contacts and chats") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = { IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, null) } },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("All", "Unread", "Favorites").forEach { item ->
-                FilterChip(selected = filter == item, onClick = { filter = item; tab = HomeTab.CHATS }, label = { Text(item) })
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            placeholder = { Text("Search contacts and chats", color = AppMuted) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = AppMuted) },
+            trailingIcon = {
+                if (search.isNotEmpty()) {
+                    IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, null, tint = AppMuted) }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 48.dp)
+        )
+
+        if (!showArchived) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                listOf("All", "Unread", "Favorites").forEach { item ->
+                    FilterChip(
+                        selected = filter == item,
+                        onClick = { filter = item; tab = HomeTab.CHATS },
+                        label = { Text(item, fontSize = 12.sp) }
+                    )
+                }
+                IconButton(onClick = onNewContact, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Add, null, tint = AppMuted)
+                }
             }
         }
-        when (tab) {
-            HomeTab.CHATS -> {
-                val visible = contacts
-                    .filter { search.isBlank() || it.name.contains(search.trim(), true) || it.phone.contains(search.trim()) }
-                    .filter { contact -> when (filter) {
-                        "Unread" -> latestMessages[contact.id]?.outgoing == false
-                        "Favorites" -> contact.isPinned
-                        else -> true
-                    } }
-                if (visible.isEmpty()) {
-                    EmptyHome(onAdd = onNewContact, onManage = onManageContacts)
-                } else {
-                    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 14.dp)) {
-                        items(visible, key = { it.id }) { contact ->
-                            ChatListRow(contact, database, onClick = { onOpenChat(contact) })
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when (tab) {
+                HomeTab.CHATS -> {
+                    Column(Modifier.fillMaxSize()) {
+                        if (!showArchived && archivedCount > 0) {
+                            Row(
+                                Modifier.fillMaxWidth().combinedClickable(onClick = { showArchived = true; search = ""; filter = "All" })
+                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Archive, null, tint = AppMuted, modifier = Modifier.size(23.dp))
+                                Spacer(Modifier.width(24.dp))
+                                Text("Archived", color = AppText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Text(archivedCount.toString(), color = AppMuted, fontSize = 12.sp)
+                                Icon(Icons.Default.KeyboardArrowRight, null, tint = AppMuted)
+                            }
+                        }
+                        if (visibleContacts.isEmpty()) {
+                            if (showArchived) {
+                                Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Icon(Icons.Default.Archive, null, tint = AppMuted, modifier = Modifier.size(46.dp))
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("No archived chats", color = AppText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            } else {
+                                EmptyHome(onAdd = onNewContact, onManage = onManageContacts)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(bottom = 16.dp)
+                            ) {
+                                items(visibleContacts, key = { it.id }) { contact ->
+                                    ChatListRow(
+                                        contact = contact,
+                                        database = database,
+                                        onClick = { onOpenChat(contact) },
+                                        onLongClick = { selectedContact = contact }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+                HomeTab.UPDATES -> PlaceholderTab("Updates", "Create and manage local status previews.", Icons.Default.Update, onNotify)
+                HomeTab.COMMUNITIES -> PlaceholderTab("Communities", "Your community spaces will appear here.", Icons.Default.Group, onNotify)
+                HomeTab.CALLS -> PlaceholderTab("Calls", "Call history is a local visual record.", Icons.Default.Call, onNotify)
             }
-            HomeTab.UPDATES -> PlaceholderTab("Updates", "Create a local status conversation editor", Icons.Default.Update, onNotify)
-            HomeTab.COMMUNITIES -> PlaceholderTab("Communities", "Community previews are not connected to WhatsApp", Icons.Default.Group, onNotify)
-            HomeTab.CALLS -> PlaceholderTab("Calls", "Call history", Icons.Default.Call, onNotify)
+
+            if (tab == HomeTab.CHATS && !showArchived) {
+                androidx.compose.material3.FloatingActionButton(
+                    onClick = onNewContact,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
+                    containerColor = AppAccent,
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(17.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "New chat")
+                }
+            }
         }
-        Divider(color = Color(0xFF172229))
-        Row(Modifier.fillMaxWidth().height(76.dp).background(AppSurface2), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+
+        Divider(color = if (ThemeState.isDark) Color(0xFF26343B) else Color(0xFFE2E7EA))
+        Row(
+            Modifier.fillMaxWidth().height(76.dp).background(AppSurface2),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             HomeTab.values().forEach { item ->
                 val icon = when (item) {
                     HomeTab.CHATS -> Icons.Default.Chat
@@ -350,14 +453,38 @@ private fun HomeScreen(
                     HomeTab.COMMUNITIES -> Icons.Default.Group
                     HomeTab.CALLS -> Icons.Default.Call
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(78.dp).clip(RoundedCornerShape(18.dp)).combinedClickable(onClick = { tab = item })) {
-                    Box(Modifier.clip(CircleShape).background(if (tab == item) Color(0xFF123B33) else Color.Transparent).padding(horizontal = 18.dp, vertical = 5.dp)) {
-                        Icon(icon, null, tint = if (tab == item) AppAccent else AppText, modifier = Modifier.size(23.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(78.dp).clip(RoundedCornerShape(18.dp)).combinedClickable(onClick = { tab = item; showArchived = false })
+                ) {
+                    Box(
+                        Modifier.clip(CircleShape).background(if (tab == item && !showArchived) AppAccent.copy(alpha = 0.15f) else Color.Transparent)
+                            .padding(horizontal = 18.dp, vertical = 5.dp)
+                    ) {
+                        Icon(icon, null, tint = if (tab == item && !showArchived) AppAccent else AppText, modifier = Modifier.size(23.dp))
                     }
-                    Text(item.label, color = if (tab == item) AppText else AppMuted, fontSize = 11.sp, fontWeight = if (tab == item) FontWeight.SemiBold else FontWeight.Normal)
+                    Text(item.label, color = if (tab == item && !showArchived) AppText else AppMuted, fontSize = 11.sp, fontWeight = if (tab == item && !showArchived) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
+    }
+
+    selectedContact?.let { contact ->
+        AlertDialog(
+            onDismissRequest = { selectedContact = null },
+            title = { Text(contact.name) },
+            text = { Text(if (contact.isArchived) "Move this conversation back to your chat list?" else "Move this conversation to Archived?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        database.contactDao().upsert(contact.copy(isArchived = !contact.isArchived))
+                        onNotify(if (contact.isArchived) "Chat unarchived" else "Chat archived")
+                    }
+                    selectedContact = null
+                }) { Text(if (contact.isArchived) "Unarchive" else "Archive") }
+            },
+            dismissButton = { TextButton(onClick = { selectedContact = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -387,34 +514,57 @@ private fun androidx.compose.foundation.layout.ColumnScope.PlaceholderTab(title:
 }
 
 @Composable
-private fun ChatListRow(contact: ContactEntity, database: WhatsuppDatabase, onClick: () -> Unit) {
+private fun ChatListRow(
+    contact: ContactEntity,
+    database: WhatsuppDatabase,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     var lastMessage by remember(contact.id) { mutableStateOf<MessageEntity?>(null) }
     LaunchedEffect(contact.id) { lastMessage = database.messageDao().latestForContact(contact.id) }
     val unread = lastMessage?.let { !it.outgoing && !it.isDeleted } == true
     Row(
-        Modifier.fillMaxWidth().combinedClickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         ContactAvatar(contact, 54.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(contact.name, color = AppText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(lastMessage?.let { ChatFormatting.time(it.timestamp) } ?: "", color = if (unread) AppAccent else AppMuted, fontSize = 11.sp)
+                Text(
+                    contact.name,
+                    color = AppText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    lastMessage?.let { ChatFormatting.time(it.timestamp) } ?: ChatFormatting.time(contact.createdAt),
+                    color = if (unread) AppAccent else AppMuted,
+                    fontSize = 11.sp
+                )
             }
             Spacer(Modifier.height(5.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (lastMessage?.outgoing == true) {
-                    val tick = when (lastMessage?.status) {
-                        "READ" -> "✓✓"
-                        "DELIVERED" -> "✓✓"
-                        else -> "✓"
-                    }
-                    Text(tick, color = if (lastMessage?.status == "READ") Color(0xFF53BDEB) else AppMuted, fontSize = 12.sp)
+                    Text(
+                        when (lastMessage?.status) {
+                            "READ", "DELIVERED" -> "✓✓"
+                            else -> "✓"
+                        },
+                        color = if (lastMessage?.status == "READ") Color(0xFF53BDEB) else AppMuted,
+                        fontSize = 12.sp
+                    )
                     Spacer(Modifier.width(5.dp))
                 }
                 Text(
-                    lastMessage?.let { ChatFormatting.preview(if (it.outgoing) it.body else it.body, it.kind) } ?: contact.about,
+                    lastMessage?.let {
+                        if (it.isDeleted) "This message was deleted"
+                        else ChatFormatting.preview(it.body, it.kind)
+                    } ?: contact.about,
                     color = if (unread) AppText else AppMuted,
                     fontSize = 13.sp,
                     fontWeight = if (unread) FontWeight.Medium else FontWeight.Normal,
@@ -1205,7 +1355,8 @@ private fun ContactEditorDialog(existing: ContactEntity?, onDismiss: () -> Unit,
                     notificationsEnabled = existing?.notificationsEnabled ?: true,
                     mediaVisibility = existing?.mediaVisibility ?: true,
                     disappearingMessages = existing?.disappearingMessages ?: false,
-                    chatLocked = existing?.chatLocked ?: false
+                    chatLocked = existing?.chatLocked ?: false,
+                    isArchived = existing?.isArchived ?: false
                 ))
             }) { Text("Save contact") }
         },
