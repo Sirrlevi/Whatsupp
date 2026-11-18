@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- This app has no network or communication integration. -->
+    <application
+        android:allowBackup="false"
+        android:label="Whatsupp"
+        android:icon="@drawable/ic_whatsupp"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Whatsupp"
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

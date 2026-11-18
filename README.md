@@ -1,26 +1,29 @@
 # Whatsupp
 
-Whatsupp is an offline Android chat mockup studio for creating fictional WhatsApp-inspired conversations. It is not a messenger.
+Whatsupp is an offline Android chat mockup creator. It recreates a WhatsApp-inspired dark interface for fictional conversations and visual demonstrations.
 
-## Project source
+## Features
 
-The complete Android Studio project is included in [Whatsupp-Android-Project.tar.xz](Whatsupp-Android-Project.tar.xz). The GitHub Actions workflow extracts the archive in the runner before testing and building. To inspect locally, extract the archive with any XZ/TAR utility.
+- Create and edit local contact cards with custom names, phone numbers, profile photos and about text.
+- Select a contact to open a separate DM-style screen.
+- Create incoming and outgoing simulated messages with editable date/time, status ticks and reply context.
+- Edit/delete messages and add/remove reactions.
+- Add local image attachments and see media in the contact info screen.
+- Contact profile/details, local chat settings, chat search and clear-all-data control.
+- Room database persists contacts and conversations locally.
 
-## Safety design
+## Safety boundary
 
-- No INTERNET, SMS, phone-call, call-log or message-sending permissions.
-- No integration with WhatsApp, SMS, RCS or any messaging provider.
-- Contacts, chats, edits, reactions and attachments are local-only.
-- Phone contacts and media are imported only through explicit Android system pickers.
-- Call, video and payment icons are decorative mock controls.
+This is **not a messenger**. No message can be sent to the real contact. The app does not request Internet, SMS, call, call-log or messaging permissions and does not integrate with WhatsApp. Voice, video and payment buttons are visual mock controls only. Contact/photo selection is user initiated.
 
-## CI
+## Build
 
-Pushes to main/master and manual workflow dispatch run unit tests and build a debug APK. The debug APK is uploaded as a GitHub Actions artifact. A signed Release APK is published only after the four secrets listed in SIGNING_SETUP.md are configured:
+Android Studio or GitHub Actions can build the project with Java 17, Gradle 8.9 and Android SDK 35:
 
-- ANDROID_KEYSTORE_BASE64
-- ANDROID_KEYSTORE_PASSWORD
-- ANDROID_KEY_ALIAS
-- ANDROID_KEY_PASSWORD
+```bash
+gradle testDebugUnitTest assembleDebug
+```
 
-Never commit the signing keystore or passwords. Keep the same keystore for every future install-over-existing update.
+The `Whatsupp Android APK` GitHub Actions workflow builds an installable debug APK artifact on pushes to `main`/`master` and manual dispatch. Once the four release-signing secrets described in `SIGNING_SETUP.md` are configured, it also publishes a stable-signed `Whatsupp.apk` to the latest GitHub Release.
+
+Package ID: `com.sirrlevi.whatsupp`
