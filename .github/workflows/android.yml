@@ -18,6 +18,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Source is committed after the first successful bootstrap build.
+          # Only reconstruct the source bundle on an empty project checkout.
+          if [[ -f app/build.gradle.kts && -f app/src/main/AndroidManifest.xml ]]; then
+            echo "Complete source tree already exists; bootstrap extraction skipped."
+            exit 0
+          fi
           cat bootstrap/part-*.b64 | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/Whatsupp-project.zip"
           unzip -t "$RUNNER_TEMP/Whatsupp-project.zip"
           mkdir -p "$RUNNER_TEMP/whatsupp-src"
@@ -84,6 +90,7 @@ jobs:
       - name: Expand full Android source tree in repository
         run: |
           rm -rf bootstrap Whatsupp-bootstrap Whatsupp-source
+          rm -f Whatsupp-Android-Project.tar.xz
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
