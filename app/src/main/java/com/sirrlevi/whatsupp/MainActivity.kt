@@ -692,27 +692,31 @@ private fun ChatScreen(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    val attachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val attachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+            val mime = context.contentResolver.getType(uri).orEmpty()
+            val mediaKind = if (mime.startsWith("video/")) "VIDEO" else "IMAGE"
             scope.launch {
                 database.messageDao().insert(MessageEntity(
                     id = UUID.randomUUID().toString(), contactId = contact.id,
-                    body = "", kind = "IMAGE", attachmentUri = uri.toString(), outgoing = true,
+                    body = "", kind = mediaKind, attachmentUri = uri.toString(), outgoing = true,
                     timestamp = System.currentTimeMillis(), status = "READ"
                 ))
-                onNotify("Photo added to the local conversation")
+                onNotify(if (mediaKind == "VIDEO") "Video added to this conversation" else "Photo added to this conversation")
             }
         }
     }
-    val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
             scope.launch {
                 database.messageDao().insert(MessageEntity(
                     id = UUID.randomUUID().toString(), contactId = contact.id,
                     body = "", kind = "AUDIO", attachmentUri = uri.toString(), outgoing = true,
                     timestamp = System.currentTimeMillis(), status = "READ"
                 ))
-                onNotify("Local audio file added as a voice-message bubble")
+                onNotify("Audio file added to this conversation")
             }
         }
     }
@@ -867,7 +871,7 @@ private fun ChatScreen(
                     Box {
                         IconButton(onClick = { showAttachMenu = true }) { Icon(Icons.Default.AttachFile, null, tint = AppMuted) }
                         androidx.compose.material3.DropdownMenu(expanded = showAttachMenu, onDismissRequest = { showAttachMenu = false }) {
-                            androidx.compose.material3.DropdownMenuItem(text = { Text("Photo or video") }, onClick = { showAttachMenu = false; attachLauncher.launch("image/*") }, leadingIcon = { Icon(Icons.Default.Image, null) })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("Photo or video") }, onClick = { showAttachMenu = false; attachLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, leadingIcon = { Icon(Icons.Default.Image, null) })
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Create message with details") }, onClick = { showAttachMenu = false; editingMessage = null; editorDefaultOutgoing = true; showMessageEditor = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Add contact-side reply") }, onClick = { showAttachMenu = false; editingMessage = null; editorDefaultOutgoing = false; showMessageEditor = true }, leadingIcon = { Icon(Icons.Default.Contacts, null) })
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Add multiple messages") }, onClick = { showAttachMenu = false; showBatchEditor = true }, leadingIcon = { Icon(Icons.Default.Chat, null) })
@@ -890,7 +894,7 @@ private fun ChatScreen(
                             replyTarget = null
                         }
                     } else {
-                        audioLauncher.launch("audio/*")
+                        audioLauncher.launch(arrayOf("audio/*"))
                     }
                 },
                 modifier = Modifier.size(48.dp).clip(CircleShape).background(AppAccent)
@@ -1207,17 +1211,16 @@ private fun MessageEditorDialog(
             try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
         }
     }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
             attachmentUri = uri.toString()
-            if (kind == "TEXT") {
-                val mime = context.contentResolver.getType(uri).orEmpty()
-                kind = when {
-                    mime.startsWith("audio/") -> "AUDIO"
-                    mime.startsWith("video/") -> "VIDEO"
-                    mime.startsWith("image/") -> "IMAGE"
-                    else -> "FILE"
-                }
+            val mime = context.contentResolver.getType(uri).orEmpty()
+            kind = when {
+                mime.startsWith("audio/") -> "AUDIO"
+                mime.startsWith("video/") -> "VIDEO"
+                mime.startsWith("image/") -> "IMAGE"
+                else -> "FILE"
             }
         }
     }
@@ -1247,7 +1250,7 @@ private fun MessageEditorDialog(
                     OutlinedButton(onClick = { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }) {
                         Icon(Icons.Default.Image, null); Spacer(Modifier.width(5.dp)); Text("Media")
                     }
-                    IconButton(onClick = { filePicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, null) }
+                    IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) { Icon(Icons.Default.AttachFile, null) }
                 }
                 if (!attachmentUri.isNullOrBlank()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
