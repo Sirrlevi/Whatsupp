@@ -18,11 +18,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat bootstrap/part-*.b64 | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/Whatsupp-project.tar.xz"
-          xz -t "$RUNNER_TEMP/Whatsupp-project.tar.xz"
-          tar -tJf "$RUNNER_TEMP/Whatsupp-project.tar.xz" | head -40
+          cat bootstrap/part-*.b64 | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/Whatsupp-project.zip"
+          unzip -t "$RUNNER_TEMP/Whatsupp-project.zip"
           mkdir -p "$RUNNER_TEMP/whatsupp-src"
-          tar -xJf "$RUNNER_TEMP/Whatsupp-project.tar.xz" -C "$RUNNER_TEMP/whatsupp-src"
+          unzip -q "$RUNNER_TEMP/Whatsupp-project.zip" -d "$RUNNER_TEMP/whatsupp-src"
           test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/build.gradle.kts"
           test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/src/main/AndroidManifest.xml"
           cp -a "$RUNNER_TEMP/whatsupp-src/Whatsupp/." "$GITHUB_WORKSPACE/"
