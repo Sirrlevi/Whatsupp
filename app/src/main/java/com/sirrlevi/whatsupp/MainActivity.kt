@@ -111,6 +111,10 @@ private object ThemeState {
     }
 }
 
+private object WallpaperState {
+    var defaultUri by mutableStateOf<String?>(null)
+}
+
 private val AppBg: Color get() = if (ThemeState.isDark) Color(0xFF0B141A) else Color(0xFFF7F9FA)
 private val AppSurface: Color get() = if (ThemeState.isDark) Color(0xFF202C33) else Color(0xFFFFFFFF)
 private val AppSurface2: Color get() = if (ThemeState.isDark) Color(0xFF111B21) else Color(0xFFF0F2F5)
@@ -127,6 +131,7 @@ class MainActivity : ComponentActivity() {
         val database = WhatsuppDatabase.get(applicationContext)
         val preferences = getSharedPreferences("whatsupp-preferences", Context.MODE_PRIVATE)
         ThemeState.mode = preferences.getString("theme_mode", "system") ?: "system"
+        WallpaperState.defaultUri = preferences.getString("default_chat_wallpaper", null)
         ThemeState.systemIsDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         setContent {
             val scheme = if (ThemeState.isDark) {
@@ -176,6 +181,7 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
     var showNewContact by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var themeMode by remember { mutableStateOf(ThemeState.mode) }
+    var defaultWallpaperUri by remember { mutableStateOf(WallpaperState.defaultUri) }
     var snackbarText by remember { mutableStateOf<String?>(null) }
     val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
 
@@ -226,11 +232,18 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
                 )
                 route == "settings" -> SettingsScreen(
                     themeMode = themeMode,
+                    defaultWallpaperUri = defaultWallpaperUri,
                     onThemeModeChange = { selected ->
                         themeMode = selected
                         ThemeState.mode = selected
                         context.getSharedPreferences("whatsupp-preferences", Context.MODE_PRIVATE)
                             .edit().putString("theme_mode", selected).apply()
+                    },
+                    onDefaultWallpaperChange = { uri ->
+                        defaultWallpaperUri = uri
+                        WallpaperState.defaultUri = uri
+                        context.getSharedPreferences("whatsupp-preferences", Context.MODE_PRIVATE)
+                            .edit().putString("default_chat_wallpaper", uri).apply()
                     },
                     onBack = { route = "home" },
                     onManageContacts = { route = "contacts" },
@@ -657,7 +670,7 @@ private fun ChatScreen(
         context.getSharedPreferences("whatsupp-chat-settings", Context.MODE_PRIVATE)
     }
     var wallpaperUri by remember(contact.id) {
-        mutableStateOf(wallpaperPreferences.getString("wallpaper_${contact.id}", null))
+        mutableStateOf(wallpaperPreferences.getString("wallpaper_${contact.id}", null) ?: WallpaperState.defaultUri)
     }
     val localView = LocalView.current
     val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -754,7 +767,7 @@ private fun ChatScreen(
                             leadingIcon = { Icon(Icons.Default.Delete, null) },
                             onClick = {
                                 showChatMenu = false
-                                wallpaperUri = null
+                                wallpaperUri = WallpaperState.defaultUri
                                 wallpaperPreferences.edit().remove("wallpaper_${contact.id}").apply()
                                 onNotify("Default chat wallpaper restored")
                             }
@@ -1516,13 +1529,23 @@ private fun ProfileToggleRow(icon: androidx.compose.ui.graphics.vector.ImageVect
 @Composable
 private fun SettingsScreen(
     themeMode: String,
+    defaultWallpaperUri: String?,
     onThemeModeChange: (String) -> Unit,
+    onDefaultWallpaperChange: (String?) -> Unit,
     onBack: () -> Unit,
     onManageContacts: () -> Unit,
     onClearData: () -> Unit
 ) {
     var showConfirm by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showChatsDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val defaultWallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+            onDefaultWallpaperChange(uri.toString())
+        }
+    }
     Column(Modifier.fillMaxSize().background(AppBg)) {
         Row(Modifier.fillMaxWidth().height(58.dp).background(AppSurface2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
@@ -1540,7 +1563,7 @@ private fun SettingsScreen(
         }
         Divider(color = Color(0xFF27343A))
         ProfileInfoRow(Icons.Default.Contacts, "Contacts and chat profiles", "Create, import, edit or delete local contacts", onManageContacts)
-        ProfileInfoRow(Icons.Default.Wallpaper, "Chats", "Theme, chat wallpapers and saved history") { showThemeDialog = true }
+        ProfileInfoRow(Icons.Default.Chat, "Chats", "Theme, chat wallpapers and saved history") { showChatsDialog = true }
         ProfileInfoRow(Icons.Default.Shield, "Privacy and safety", "No messaging, calling or internet permission") { }
         ProfileInfoRow(Icons.Default.Info, "About", "Conversation edits stay on this device") { }
         Spacer(Modifier.weight(1f))
@@ -1548,6 +1571,46 @@ private fun SettingsScreen(
             Icon(Icons.Default.Delete, null); Spacer(Modifier.width(8.dp)); Text("Clear all local data")
         }
         Text("Whatsupp · Conversation composer", color = AppMuted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+    }
+    if (showChatsDialog) {
+        AlertDialog(
+            onDismissRequest = { showChatsDialog = false },
+            title = { Text("Chats") },
+            text = {
+                Column {
+                    ProfileInfoRow(Icons.Default.Settings, "Theme", themeMode.replaceFirstChar { it.uppercase() }) {
+                        showChatsDialog = false
+                        showThemeDialog = true
+                    }
+                    ProfileInfoRow(
+                        Icons.Default.Wallpaper,
+                        "Chat wallpaper",
+                        if (defaultWallpaperUri.isNullOrBlank()) "Choose a default background" else "Default background is set"
+                    ) {
+                        showChatsDialog = false
+                        defaultWallpaperPicker.launch(
+                            androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    if (!defaultWallpaperUri.isNullOrBlank()) {
+                        TextButton(
+                            onClick = {
+                                onDefaultWallpaperChange(null)
+                                showChatsDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Remove default wallpaper") }
+                    }
+                    Text(
+                        "Chat history and profiles are saved locally on this device.",
+                        color = AppMuted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showChatsDialog = false }) { Text("Close") } }
+        )
     }
     if (showThemeDialog) {
         AlertDialog(
