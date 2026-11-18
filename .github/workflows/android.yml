@@ -1,0 +1,102 @@
+name: Whatsupp Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore complete Android project
+        run: |
+          tar -xJf Whatsupp-Android-Project.tar.xz -C "$RUNNER_TEMP"
+          cp -a "$RUNNER_TEMP/Whatsupp/." "$GITHUB_WORKSPACE/"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify no real communication permissions or actions
+        run: |
+          if grep -E '<uses-permission[^>]+android:name="android.permission.(INTERNET|SEND_SMS|CALL_PHONE|READ_CALL_LOG)"' app/src/main/AndroidManifest.xml; then
+            echo "Unexpected communication permission found" >&2
+            exit 1
+          fi
+          if grep -R -E 'SmsManager|ACTION_SENDTO|ACTION_CALL|ACTION_DIAL' app/src/main/java; then
+            echo "Unexpected real messaging/calling integration found" >&2
+            exit 1
+          fi
+
+      - name: Run unit tests
+        run: gradle testDebugUnitTest
+
+      - name: Build debug APK
+        run: gradle assembleDebug
+
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Whatsupp-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Check stable signing configuration
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets not configured; skipping signed release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Restore release keystore
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/whatsupp-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/whatsupp-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle assembleRelease
+
+      - name: Publish latest signed APK
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Whatsupp Latest APK
+          target_commitish: ${{ github.sha }}
+          files: app/build/outputs/apk/release/app-release.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
