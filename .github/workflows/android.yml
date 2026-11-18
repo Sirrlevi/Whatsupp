@@ -14,10 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore complete Android project
+      - name: Reassemble and validate complete Android project
+        shell: bash
         run: |
-          tar -xJf Whatsupp-Android-Project.tar.xz -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/Whatsupp/." "$GITHUB_WORKSPACE/"
+          set -euo pipefail
+          cat bootstrap/part-*.b64 | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/Whatsupp-project.tar.xz"
+          xz -t "$RUNNER_TEMP/Whatsupp-project.tar.xz"
+          tar -tJf "$RUNNER_TEMP/Whatsupp-project.tar.xz" | head -40
+          mkdir -p "$RUNNER_TEMP/whatsupp-src"
+          tar -xJf "$RUNNER_TEMP/Whatsupp-project.tar.xz" -C "$RUNNER_TEMP/whatsupp-src"
+          test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/build.gradle.kts"
+          test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/src/main/AndroidManifest.xml"
+          cp -a "$RUNNER_TEMP/whatsupp-src/Whatsupp/." "$GITHUB_WORKSPACE/"
+          echo "Restored complete source tree."
 
       - uses: actions/setup-java@v4
         with:
@@ -33,7 +42,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Verify no real communication permissions or actions
+      - name: Verify offline-only safety boundary
         run: |
           if grep -E '<uses-permission[^>]+android:name="android.permission.(INTERNET|SEND_SMS|CALL_PHONE|READ_CALL_LOG)"' app/src/main/AndroidManifest.xml; then
             echo "Unexpected communication permission found" >&2
@@ -58,6 +67,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Expand full Android source tree in repository
+        run: |
+          rm -rf bootstrap Whatsupp-bootstrap Whatsupp-source
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Add complete Whatsupp Android source tree"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
       - name: Check stable signing configuration
         id: signing
         env:
@@ -70,10 +90,10 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Signing secrets not configured; skipping signed release." >> "$GITHUB_STEP_SUMMARY"
+            echo "Stable signing secrets are not configured; no signed release is published." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Restore release keystore
+      - name: Restore stable release keystore
         if: steps.signing.outputs.ready == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -81,7 +101,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/whatsupp-release.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/whatsupp-release.jks" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Build signed APK
         if: steps.signing.outputs.ready == 'true'
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -95,7 +115,6 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Whatsupp Latest APK
-          target_commitish: ${{ github.sha }}
           files: app/build/outputs/apk/release/app-release.apk
           make_latest: true
         env:
