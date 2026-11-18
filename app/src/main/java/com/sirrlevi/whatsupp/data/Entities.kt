@@ -1,6 +1,7 @@
 package com.sirrlevi.whatsupp.data
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -17,7 +18,8 @@ data class ContactEntity(
     val notificationsEnabled: Boolean = true,
     val mediaVisibility: Boolean = true,
     val disappearingMessages: Boolean = false,
-    val chatLocked: Boolean = false
+    val chatLocked: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val isArchived: Boolean = false
 )
 
 @Entity(
