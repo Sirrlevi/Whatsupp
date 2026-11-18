@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -296,7 +297,7 @@ private fun HomeScreen(
             }
             HomeTab.UPDATES -> PlaceholderTab("Updates", "Create a local status conversation editor", Icons.Default.Update, onNotify)
             HomeTab.COMMUNITIES -> PlaceholderTab("Communities", "Community previews are not connected to WhatsApp", Icons.Default.Group, onNotify)
-            HomeTab.CALLS -> PlaceholderTab("Calls", "Call history can be mocked here. No calls are placed.", Icons.Default.Call, onNotify)
+            HomeTab.CALLS -> PlaceholderTab("Calls", "Call history", Icons.Default.Call, onNotify)
         }
         Divider(color = Color(0xFF172229))
         Row(Modifier.fillMaxWidth().height(76.dp).background(AppSurface2), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
@@ -1151,7 +1152,7 @@ private fun ContactInfoScreen(
                 }
             }
             item { ProfileInfoRow(Icons.Default.Image, "Manage storage", "${attachments.size} attachments") { onNotify("${messages.size} messages · ${attachments.size} attachments stored locally") } }
-            item { ProfileToggleRow(Icons.Default.Notifications, "Notifications", "Local mock preference", notifications) { enabled -> notifications = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(notificationsEnabled = enabled)) } } } }
+            item { ProfileToggleRow(Icons.Default.Notifications, "Notifications", "Local alert preference", notifications) { enabled -> notifications = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(notificationsEnabled = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Image, "Media visibility", "Controls the shared-photo strip", mediaVisible) { enabled -> mediaVisible = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(mediaVisibility = enabled)) } } } }
             item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls are not transmitted. This is a local local chat setup.") { onNotify("Whatsupp stores messages only in its local database.") } }
             item { ProfileToggleRow(Icons.Default.Update, "Disappearing messages", "Visual setting only", disappearing) { enabled -> disappearing = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(disappearingMessages = enabled)) } } } }
@@ -1255,7 +1256,7 @@ private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onC
         Button(onClick = { showConfirm = true }, modifier = Modifier.fillMaxWidth().padding(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B3030))) {
             Icon(Icons.Default.Delete, null); Spacer(Modifier.width(8.dp)); Text("Clear all local data")
         }
-        Text("Whatsupp · Made for mock conversations", color = AppMuted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+        Text("Whatsupp · Conversation composer", color = AppMuted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
     }
     if (showConfirm) {
         AlertDialog(
