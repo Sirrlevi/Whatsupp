@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1152,7 +1153,7 @@ private fun ContactInfoScreen(
             item { ProfileInfoRow(Icons.Default.Image, "Manage storage", "${attachments.size} attachments") { onNotify("${messages.size} messages · ${attachments.size} attachments stored locally") } }
             item { ProfileToggleRow(Icons.Default.Notifications, "Notifications", "Local mock preference", notifications) { enabled -> notifications = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(notificationsEnabled = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Image, "Media visibility", "Controls the shared-photo strip", mediaVisible) { enabled -> mediaVisible = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(mediaVisibility = enabled)) } } } }
-            item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls are not transmitted. This is a local simulation.") { onNotify("Whatsupp stores messages only in its local database.") } }
+            item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls are not transmitted. This is a local local chat setup.") { onNotify("Whatsupp stores messages only in its local database.") } }
             item { ProfileToggleRow(Icons.Default.Update, "Disappearing messages", "Visual setting only", disappearing) { enabled -> disappearing = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(disappearingMessages = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Smartphone, "Chat lock", "Local UI preference only", chatLock) { enabled -> chatLock = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(chatLocked = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.PushPin, "Pin chat", null, pinned) { enabled -> pinned = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(isPinned = enabled)) } } } }
