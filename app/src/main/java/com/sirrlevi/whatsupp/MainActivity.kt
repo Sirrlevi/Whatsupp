@@ -498,10 +498,28 @@ private fun ChatScreen(
     var replyTarget by remember { mutableStateOf<MessageEntity?>(null) }
     var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var showAttachMenu by remember { mutableStateOf(false) }
+    var showChatMenu by remember { mutableStateOf(false) }
+    var showSearchMessages by remember { mutableStateOf(false) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val wallpaperPreferences = remember(contact.id) {
+        context.getSharedPreferences("whatsupp-chat-settings", Context.MODE_PRIVATE)
+    }
+    var wallpaperUri by remember(contact.id) {
+        mutableStateOf(wallpaperPreferences.getString("wallpaper_${contact.id}", null))
+    }
     val localView = LocalView.current
+    val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            wallpaperUri = uri.toString()
+            wallpaperPreferences.edit().putString("wallpaper_${contact.id}", uri.toString()).apply()
+            onNotify("Chat wallpaper saved for ${contact.name}")
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         if (uri != null) {
             try {
@@ -563,50 +581,109 @@ private fun ChatScreen(
             IconButton(onClick = { onNotify("Voice calls are not connected in Whatsupp.") }) { Icon(Icons.Default.Videocam, null, tint = AppText) }
             IconButton(onClick = { onNotify("Calls are local only. No call was placed.") }) { Icon(Icons.Default.Call, null, tint = AppText) }
             IconButton(onClick = { exportLauncher.launch("Whatsupp-${contact.name.replace(Regex("[^A-Za-z0-9_-]"), "_")}-chat.png") }) { Icon(Icons.Default.CameraAlt, null, tint = AppText) }
-            IconButton(onClick = onProfile) { Icon(Icons.Default.MoreVert, null, tint = AppText) }
+            Box {
+                IconButton(onClick = { showChatMenu = true }) { Icon(Icons.Default.MoreVert, null, tint = AppText) }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showChatMenu,
+                    onDismissRequest = { showChatMenu = false }
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Wallpaper") },
+                        leadingIcon = { Icon(Icons.Default.Wallpaper, null) },
+                        onClick = {
+                            showChatMenu = false
+                            wallpaperPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    )
+                    if (!wallpaperUri.isNullOrBlank()) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Remove wallpaper") },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = {
+                                showChatMenu = false
+                                wallpaperUri = null
+                                wallpaperPreferences.edit().remove("wallpaper_${contact.id}").apply()
+                                onNotify("Default chat wallpaper restored")
+                            }
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Search in chat") },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        onClick = { showChatMenu = false; showSearchMessages = true }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Contact info") },
+                        leadingIcon = { Icon(Icons.Default.Info, null) },
+                        onClick = { showChatMenu = false; onProfile() }
+                    )
+                }
+            }
         }
-        if (messages.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No messages yet", color = AppMuted)
-                    Text("Use the editor to add either side of the chat.", color = AppMuted, fontSize = 12.sp)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (!wallpaperUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = wallpaperUri,
+                    contentDescription = "Chat wallpaper",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = if (ThemeState.isDark) 0.42f else 0.56f
+                )
+                Box(
+                    Modifier.fillMaxSize().background(
+                        if (ThemeState.isDark) Color.Black.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.24f)
+                    )
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxSize().background(AppBg).drawBehind {
+                        val line = if (ThemeState.isDark) Color(0xFF26343B) else Color(0xFFDCE2E5)
+                        val stepX = 116.dp.toPx()
+                        val stepY = 138.dp.toPx()
+                        val radius = 13.dp.toPx()
+                        var x = 28.dp.toPx()
+                        while (x < size.width) {
+                            var y = 30.dp.toPx()
+                            while (y < size.height) {
+                                drawCircle(line, radius = radius, center = Offset(x, y), style = Stroke(width = 1.dp.toPx()))
+                                drawLine(line, Offset(x - radius, y + radius), Offset(x + radius, y + radius * 1.7f), strokeWidth = 1.dp.toPx())
+                                drawLine(line, Offset(x + radius * 1.5f, y - radius), Offset(x + radius * 2.3f, y - radius * 0.3f), strokeWidth = 1.dp.toPx())
+                                y += stepY
+                            }
+                            x += stepX
+                        }
+                    }
+                )
+            }
+            if (messages.isEmpty()) {
+                Column(
+                    Modifier.fillMaxSize().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("No messages yet", color = AppText)
+                    Text("Add messages to build this conversation.", color = AppMuted, fontSize = 12.sp)
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = { editingMessage = null; editorDefaultOutgoing = true; showMessageEditor = true }, colors = ButtonDefaults.buttonColors(containerColor = AppAccent)) { Text("Create first message") }
                 }
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().background(AppBg).drawBehind {
-                    val line = Color(0xFF15232A)
-                    val stepX = 116.dp.toPx()
-                    val stepY = 138.dp.toPx()
-                    val radius = 13.dp.toPx()
-                    var x = 28.dp.toPx()
-                    while (x < size.width) {
-                        var y = 30.dp.toPx()
-                        while (y < size.height) {
-                            drawCircle(line, radius = radius, center = Offset(x, y), style = Stroke(width = 1.dp.toPx()))
-                            drawLine(line, Offset(x - radius, y + radius), Offset(x + radius, y + radius * 1.7f), strokeWidth = 1.dp.toPx())
-                            drawLine(line, Offset(x + radius * 1.5f, y - radius), Offset(x + radius * 2.3f, y - radius * 0.3f), strokeWidth = 1.dp.toPx())
-                            y += stepY
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
+                        val dateLabel = ChatFormatting.dateLabel(message.timestamp)
+                        if (index == 0 || ChatFormatting.dateLabel(messages[index - 1].timestamp) != dateLabel) {
+                            DateSeparator(dateLabel)
                         }
-                        x += stepX
+                        MessageBubble(
+                            message = message,
+                            reply = messages.firstOrNull { it.id == message.replyToId },
+                            onLongClick = { selectedMessage = message }
+                        )
                     }
-                },
-                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
-                    val dateLabel = ChatFormatting.dateLabel(message.timestamp)
-                    if (index == 0 || ChatFormatting.dateLabel(messages[index - 1].timestamp) != dateLabel) {
-                        DateSeparator(dateLabel)
-                    }
-                    MessageBubble(
-                        message = message,
-                        reply = messages.firstOrNull { it.id == message.replyToId },
-                        onLongClick = { selectedMessage = message }
-                    )
                 }
             }
         }
@@ -722,6 +799,9 @@ private fun ChatScreen(
     }
     if (showEmojiPicker) {
         EmojiPickerDialog(onDismiss = { showEmojiPicker = false }, onSelect = { emoji -> composer += emoji; showEmojiPicker = false })
+    }
+    if (showSearchMessages) {
+        SearchMessagesDialog(messages = messages, contactName = contact.name, onDismiss = { showSearchMessages = false })
     }
 }
 
@@ -1193,7 +1273,8 @@ private fun ContactInfoScreen(
                     Spacer(Modifier.height(22.dp))
                 }
             }
-            item { ProfileInfoRow(Icons.Default.Image, "Manage storage", "${attachments.size} attachments") { onNotify("${messages.size} messages · ${attachments.size} attachments stored locally") } }
+            item { ProfileInfoRow(Icons.Default.Wallpaper, "Chat wallpaper", "Change the background for this conversation") { onNotify("Open the conversation menu and choose Wallpaper.") } }
+            item { ProfileInfoRow(Icons.Default.Image, "Manage storage", "${attachments.size} attachments · ${messages.size} messages saved locally") { onNotify("${messages.size} messages · ${attachments.size} attachments stored on this device") } }
             item { ProfileToggleRow(Icons.Default.Notifications, "Notifications", "Local alert preference", notifications) { enabled -> notifications = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(notificationsEnabled = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Image, "Media visibility", "Controls the shared-photo strip", mediaVisible) { enabled -> mediaVisible = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(mediaVisibility = enabled)) } } } }
             item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls are not transmitted. This is a local local chat setup.") { onNotify("Whatsupp stores messages only in its local database.") } }
