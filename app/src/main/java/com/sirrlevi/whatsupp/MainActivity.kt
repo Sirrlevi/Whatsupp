@@ -5,6 +5,8 @@ package com.sirrlevi.whatsupp
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.content.Intent
+import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
@@ -69,15 +71,19 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -94,25 +100,36 @@ import com.sirrlevi.whatsupp.ui.ChatFormatting
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private val AppBg = Color(0xFF0B141A)
-private val AppSurface = Color(0xFF202C33)
-private val AppSurface2 = Color(0xFF111B21)
-private val AppGreen = Color(0xFF075E54)
-private val AppAccent = Color(0xFF00A884)
-private val AppText = Color(0xFFE9EDEF)
-private val AppMuted = Color(0xFF8696A0)
-private val IncomingBubble = Color(0xFF202C33)
-private val OutgoingBubble = Color(0xFF005C4B)
+private object ThemeState {
+    var mode by mutableStateOf("system")
+    var systemIsDark by mutableStateOf(true)
+    val isDark: Boolean get() = when (mode) {
+        "dark" -> true
+        "light" -> false
+        else -> systemIsDark
+    }
+}
+
+private val AppBg: Color get() = if (ThemeState.isDark) Color(0xFF0B141A) else Color(0xFFF7F9FA)
+private val AppSurface: Color get() = if (ThemeState.isDark) Color(0xFF202C33) else Color(0xFFFFFFFF)
+private val AppSurface2: Color get() = if (ThemeState.isDark) Color(0xFF111B21) else Color(0xFFF0F2F5)
+private val AppGreen: Color get() = if (ThemeState.isDark) Color(0xFF075E54) else Color(0xFF008069)
+private val AppAccent: Color get() = if (ThemeState.isDark) Color(0xFF00A884) else Color(0xFF008069)
+private val AppText: Color get() = if (ThemeState.isDark) Color(0xFFE9EDEF) else Color(0xFF111B21)
+private val AppMuted: Color get() = if (ThemeState.isDark) Color(0xFF8696A0) else Color(0xFF667781)
+private val IncomingBubble: Color get() = if (ThemeState.isDark) Color(0xFF202C33) else Color(0xFFFFFFFF)
+private val OutgoingBubble: Color get() = if (ThemeState.isDark) Color(0xFF005C4B) else Color(0xFFD9FDD3)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val database = WhatsuppDatabase.get(applicationContext)
-        window.statusBarColor = android.graphics.Color.rgb(11, 20, 26)
-        window.navigationBarColor = android.graphics.Color.rgb(11, 20, 26)
+        val preferences = getSharedPreferences("whatsupp-preferences", Context.MODE_PRIVATE)
+        ThemeState.mode = preferences.getString("theme_mode", "system") ?: "system"
+        ThemeState.systemIsDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
+            val scheme = if (ThemeState.isDark) {
+                darkColorScheme(
                     primary = AppAccent,
                     onPrimary = Color.White,
                     secondary = Color(0xFF53BDEB),
@@ -123,7 +140,24 @@ class MainActivity : ComponentActivity() {
                     surfaceVariant = AppSurface2,
                     onSurfaceVariant = AppMuted
                 )
-            ) {
+            } else {
+                lightColorScheme(
+                    primary = AppAccent,
+                    onPrimary = Color.White,
+                    secondary = Color(0xFF087F72),
+                    background = AppBg,
+                    onBackground = AppText,
+                    surface = AppSurface,
+                    onSurface = AppText,
+                    surfaceVariant = AppSurface2,
+                    onSurfaceVariant = AppMuted
+                )
+            }
+            SideEffect {
+                window.statusBarColor = AppBg.toArgb()
+                window.navigationBarColor = AppBg.toArgb()
+            }
+            MaterialTheme(colorScheme = scheme) {
                 WhatsuppApp(database)
             }
         }
@@ -140,6 +174,7 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
     var editingContact by remember { mutableStateOf<ContactEntity?>(null) }
     var showNewContact by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var themeMode by remember { mutableStateOf(ThemeState.mode) }
     var snackbarText by remember { mutableStateOf<String?>(null) }
     val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
 
@@ -189,6 +224,13 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
                     onDelete = { contact -> scope.launch { database.contactDao().delete(contact.id); notify("Contact deleted") } }
                 )
                 route == "settings" -> SettingsScreen(
+                    themeMode = themeMode,
+                    onThemeModeChange = { selected ->
+                        themeMode = selected
+                        ThemeState.mode = selected
+                        context.getSharedPreferences("whatsupp-preferences", Context.MODE_PRIVATE)
+                            .edit().putString("theme_mode", selected).apply()
+                    },
                     onBack = { route = "home" },
                     onManageContacts = { route = "contacts" },
                     onClearData = {
@@ -1230,8 +1272,15 @@ private fun ProfileToggleRow(icon: androidx.compose.ui.graphics.vector.ImageVect
 }
 
 @Composable
-private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onClearData: () -> Unit) {
+private fun SettingsScreen(
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
+    onBack: () -> Unit,
+    onManageContacts: () -> Unit,
+    onClearData: () -> Unit
+) {
     var showConfirm by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(AppBg)) {
         Row(Modifier.fillMaxWidth().height(58.dp).background(AppSurface2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
@@ -1249,7 +1298,7 @@ private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onC
         }
         Divider(color = Color(0xFF27343A))
         ProfileInfoRow(Icons.Default.Contacts, "Contacts and chat profiles", "Create, import, edit or delete local contacts", onManageContacts)
-        ProfileInfoRow(Icons.Default.Wallpaper, "Chat appearance", "Dark conversation layout") { }
+        ProfileInfoRow(Icons.Default.Wallpaper, "Chats", "Theme, chat wallpapers and saved history") { showThemeDialog = true }
         ProfileInfoRow(Icons.Default.Shield, "Privacy and safety", "No messaging, calling or internet permission") { }
         ProfileInfoRow(Icons.Default.Info, "About", "Conversation edits stay on this device") { }
         Spacer(Modifier.weight(1f))
@@ -1257,6 +1306,27 @@ private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onC
             Icon(Icons.Default.Delete, null); Spacer(Modifier.width(8.dp)); Text("Clear all local data")
         }
         Text("Whatsupp · Conversation composer", color = AppMuted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+    }
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Choose theme") },
+            text = {
+                Column {
+                    listOf("system" to "System default", "light" to "Light", "dark" to "Dark").forEach { (mode, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().combinedClickable(onClick = { onThemeModeChange(mode); showThemeDialog = false }).padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = themeMode == mode, onClick = { onThemeModeChange(mode); showThemeDialog = false })
+                            Spacer(Modifier.width(10.dp))
+                            Text(label, color = AppText)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showThemeDialog = false }) { Text("Close") } }
+        )
     }
     if (showConfirm) {
         AlertDialog(
