@@ -382,7 +382,7 @@ private fun HomeScreen(
             when (tab) {
                 HomeTab.CHATS -> {
                     Column(Modifier.fillMaxSize()) {
-                        if (!showArchived && archivedCount > 0) {
+                        if (!showArchived) {
                             Row(
                                 Modifier.fillMaxWidth().combinedClickable(onClick = { showArchived = true; search = ""; filter = "All" })
                                     .padding(horizontal = 20.dp, vertical = 12.dp),
@@ -725,12 +725,11 @@ private fun ChatScreen(
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(contact.name, color = AppText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text("tap for contact info", color = AppMuted, fontSize = 10.sp)
+                    Text(contact.about.ifBlank { "Available" }, color = AppMuted, fontSize = 11.sp)
                 }
             }
             IconButton(onClick = { onNotify("Voice calls are not connected in Whatsupp.") }) { Icon(Icons.Default.Videocam, null, tint = AppText) }
             IconButton(onClick = { onNotify("Calls are local only. No call was placed.") }) { Icon(Icons.Default.Call, null, tint = AppText) }
-            IconButton(onClick = { exportLauncher.launch("Whatsupp-${contact.name.replace(Regex("[^A-Za-z0-9_-]"), "_")}-chat.png") }) { Icon(Icons.Default.CameraAlt, null, tint = AppText) }
             Box {
                 IconButton(onClick = { showChatMenu = true }) { Icon(Icons.Default.MoreVert, null, tint = AppText) }
                 androidx.compose.material3.DropdownMenu(
@@ -761,6 +760,14 @@ private fun ChatScreen(
                         text = { Text("Search in chat") },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         onClick = { showChatMenu = false; showSearchMessages = true }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Save chat image") },
+                        leadingIcon = { Icon(Icons.Default.CameraAlt, null) },
+                        onClick = {
+                            showChatMenu = false
+                            exportLauncher.launch("Whatsupp-${contact.name.replace(Regex("[^A-Za-z0-9_-]"), "_")}-chat.png")
+                        }
                     )
                     androidx.compose.material3.DropdownMenuItem(
                         text = { Text("Contact info") },
@@ -1428,7 +1435,7 @@ private fun ContactInfoScreen(
             item { ProfileInfoRow(Icons.Default.Image, "Manage storage", "${attachments.size} attachments · ${messages.size} messages saved locally") { onNotify("${messages.size} messages · ${attachments.size} attachments stored on this device") } }
             item { ProfileToggleRow(Icons.Default.Notifications, "Notifications", "Local alert preference", notifications) { enabled -> notifications = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(notificationsEnabled = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Image, "Media visibility", "Controls the shared-photo strip", mediaVisible) { enabled -> mediaVisible = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(mediaVisibility = enabled)) } } } }
-            item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls are not transmitted. This is a local local chat setup.") { onNotify("Whatsupp stores messages only in its local database.") } }
+            item { ProfileInfoRow(Icons.Default.Shield, "Encryption", "Messages and calls stay on this device. Nothing is transmitted.") { onNotify("Whatsupp stores messages only in its local database.") } }
             item { ProfileToggleRow(Icons.Default.Update, "Disappearing messages", "Visual setting only", disappearing) { enabled -> disappearing = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(disappearingMessages = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.Smartphone, "Chat lock", "Local UI preference only", chatLock) { enabled -> chatLock = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(chatLocked = enabled)) } } } }
             item { ProfileToggleRow(Icons.Default.PushPin, "Pin chat", null, pinned) { enabled -> pinned = enabled; scope.launch { database.contactDao().getById(contact.id)?.let { database.contactDao().upsert(it.copy(isPinned = enabled)) } } } }
