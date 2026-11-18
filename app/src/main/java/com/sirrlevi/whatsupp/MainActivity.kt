@@ -254,7 +254,7 @@ private fun HomeScreen(
                 androidx.compose.material3.DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text("Manage contacts") }, onClick = { showMenu = false; onManageContacts() }, leadingIcon = { Icon(Icons.Default.Contacts, null) })
                     androidx.compose.material3.DropdownMenuItem(text = { Text("Settings") }, onClick = { showMenu = false; onSettings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("About Whatsupp") }, onClick = { showMenu = false; onNotify("Whatsupp is a local chat mockup studio. Nothing is sent.") }, leadingIcon = { Icon(Icons.Default.Info, null) })
+                    androidx.compose.material3.DropdownMenuItem(text = { Text("About Whatsupp") }, onClick = { showMenu = false; onNotify("Whatsupp is a local chat conversation editor studio. Nothing is sent.") }, leadingIcon = { Icon(Icons.Default.Info, null) })
                 }
             }
         }
@@ -293,7 +293,7 @@ private fun HomeScreen(
                     }
                 }
             }
-            HomeTab.UPDATES -> PlaceholderTab("Updates", "Create a local status mockup", Icons.Default.Update, onNotify)
+            HomeTab.UPDATES -> PlaceholderTab("Updates", "Create a local status conversation editor", Icons.Default.Update, onNotify)
             HomeTab.COMMUNITIES -> PlaceholderTab("Communities", "Community previews are not connected to WhatsApp", Icons.Default.Group, onNotify)
             HomeTab.CALLS -> PlaceholderTab("Calls", "Call history can be mocked here. No calls are placed.", Icons.Default.Call, onNotify)
         }
@@ -338,7 +338,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.PlaceholderTab(title:
         Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(description, color = AppMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = { onNotify("This section is a visual placeholder in the chat mockup.") }) { Text("Got it") }
+        OutlinedButton(onClick = { onNotify("This section is a visual placeholder in the chat conversation editor.") }) { Text("Got it") }
     }
 }
 
@@ -346,6 +346,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.PlaceholderTab(title:
 private fun ChatListRow(contact: ContactEntity, database: WhatsuppDatabase, onClick: () -> Unit) {
     var lastMessage by remember(contact.id) { mutableStateOf<MessageEntity?>(null) }
     LaunchedEffect(contact.id) { lastMessage = database.messageDao().latestForContact(contact.id) }
+    val unread = lastMessage?.let { !it.outgoing && !it.isDeleted } == true
     Row(
         Modifier.fillMaxWidth().combinedClickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -355,13 +356,36 @@ private fun ChatListRow(contact: ContactEntity, database: WhatsuppDatabase, onCl
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(contact.name, color = AppText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(lastMessage?.let { ChatFormatting.time(it.timestamp) } ?: "", color = AppMuted, fontSize = 11.sp)
+                Text(lastMessage?.let { ChatFormatting.time(it.timestamp) } ?: "", color = if (unread) AppAccent else AppMuted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(5.dp))
-            Text(
-                lastMessage?.let { (if (it.outgoing) "You: " else "") + ChatFormatting.preview(it.body, it.kind) } ?: contact.about,
-                color = AppMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (lastMessage?.outgoing == true) {
+                    val tick = when (lastMessage?.status) {
+                        "READ" -> "✓✓"
+                        "DELIVERED" -> "✓✓"
+                        else -> "✓"
+                    }
+                    Text(tick, color = if (lastMessage?.status == "READ") Color(0xFF53BDEB) else AppMuted, fontSize = 12.sp)
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    lastMessage?.let { ChatFormatting.preview(if (it.outgoing) it.body else it.body, it.kind) } ?: contact.about,
+                    color = if (unread) AppText else AppMuted,
+                    fontSize = 13.sp,
+                    fontWeight = if (unread) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (unread) {
+                    Box(Modifier.padding(start = 8.dp).size(19.dp).clip(CircleShape).background(AppAccent), contentAlignment = Alignment.Center) {
+                        Text("1", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else if (contact.isPinned) {
+                    Icon(Icons.Default.PushPin, null, tint = AppMuted, modifier = Modifier.padding(start = 7.dp).size(13.dp))
+                }
+            }
         }
     }
 }
@@ -424,6 +448,7 @@ private fun ChatScreen(
     val messages by database.messageDao().observeForContact(contact.id).collectAsState(initial = emptyList())
     var composer by remember { mutableStateOf("") }
     var showMessageEditor by remember { mutableStateOf(false) }
+    var showBatchEditor by remember { mutableStateOf(false) }
     var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editorDefaultOutgoing by remember { mutableStateOf(true) }
     var replyTarget by remember { mutableStateOf<MessageEntity?>(null) }
@@ -463,7 +488,7 @@ private fun ChatScreen(
                     body = "", kind = "IMAGE", attachmentUri = uri.toString(), outgoing = true,
                     timestamp = System.currentTimeMillis(), status = "READ"
                 ))
-                onNotify("Photo added to the simulated conversation")
+                onNotify("Photo added to the local conversation")
             }
         }
     }
@@ -492,12 +517,9 @@ private fun ChatScreen(
                 }
             }
             IconButton(onClick = { onNotify("Voice calls are not connected in Whatsupp.") }) { Icon(Icons.Default.Videocam, null, tint = AppText) }
-            IconButton(onClick = { onNotify("Calls are simulated only. No call was placed.") }) { Icon(Icons.Default.Call, null, tint = AppText) }
+            IconButton(onClick = { onNotify("Calls are local only. No call was placed.") }) { Icon(Icons.Default.Call, null, tint = AppText) }
             IconButton(onClick = { exportLauncher.launch("Whatsupp-${contact.name.replace(Regex("[^A-Za-z0-9_-]"), "_")}-chat.png") }) { Icon(Icons.Default.CameraAlt, null, tint = AppText) }
             IconButton(onClick = onProfile) { Icon(Icons.Default.MoreVert, null, tint = AppText) }
-        }
-        Row(Modifier.fillMaxWidth().background(Color(0xFF17252B)).padding(vertical = 4.dp), horizontalArrangement = Arrangement.Center) {
-            Text("SIMULATED CHAT · STORED ONLY ON THIS DEVICE", color = Color(0xFF8EA9A1), fontSize = 9.sp, letterSpacing = 0.7.sp, fontWeight = FontWeight.Bold)
         }
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -570,6 +592,7 @@ private fun ChatScreen(
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Photo or video") }, onClick = { showAttachMenu = false; attachLauncher.launch("image/*") }, leadingIcon = { Icon(Icons.Default.Image, null) })
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Create message with details") }, onClick = { showAttachMenu = false; editingMessage = null; editorDefaultOutgoing = true; showMessageEditor = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                             androidx.compose.material3.DropdownMenuItem(text = { Text("Add contact-side reply") }, onClick = { showAttachMenu = false; editingMessage = null; editorDefaultOutgoing = false; showMessageEditor = true }, leadingIcon = { Icon(Icons.Default.Contacts, null) })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("Add multiple messages") }, onClick = { showAttachMenu = false; showBatchEditor = true }, leadingIcon = { Icon(Icons.Default.Chat, null) })
                         }
                     }
                 }
@@ -595,8 +618,8 @@ private fun ChatScreen(
                 modifier = Modifier.size(48.dp).clip(CircleShape).background(AppAccent)
             ) { Icon(if (composer.isBlank()) Icons.Default.Mic else Icons.AutoMirrored.Filled.Send, null, tint = Color.White) }
         }
-        Row(Modifier.fillMaxWidth().background(Color(0xFF17252B)).padding(vertical = 3.dp), horizontalArrangement = Arrangement.Center) {
-            Text("LOCAL MOCKUP ONLY · NO MESSAGE IS SENT", color = AppMuted, fontSize = 9.sp)
+        Row(Modifier.fillMaxWidth().background(Color(0xFF101A20)).padding(vertical = 3.dp), horizontalArrangement = Arrangement.Center) {
+            Text("Whatsupp · Local composer", color = AppMuted, fontSize = 9.sp, letterSpacing = 0.2.sp)
         }
     }
 
@@ -612,6 +635,19 @@ private fun ChatScreen(
                 showMessageEditor = false
                 editingMessage = null
                 replyTarget = null
+            }
+        )
+    }
+    if (showBatchEditor) {
+        BatchMessageEditorDialog(
+            contact = contact,
+            onDismiss = { showBatchEditor = false },
+            onSave = { batch ->
+                scope.launch {
+                    batch.forEach { database.messageDao().insert(it) }
+                    onNotify("${batch.size} messages added")
+                }
+                showBatchEditor = false
             }
         )
     }
@@ -633,6 +669,10 @@ private fun ChatScreen(
                 selectedMessage = null
                 editingMessage = message
                 showMessageEditor = true
+            },
+            onStatusChange = { status ->
+                scope.launch { database.messageDao().update(message.copy(status = status)) }
+                selectedMessage = null
             }
         )
     }
@@ -670,7 +710,14 @@ private fun MessageBubble(message: MessageEntity, reply: MessageEntity?, onLongC
                 Text(ChatFormatting.time(message.timestamp), color = Color(0xFFAFBFC2), fontSize = 9.sp)
                 if (message.outgoing) {
                     Spacer(Modifier.width(3.dp))
-                    Text(if (message.status == "READ") "✓✓" else "✓", color = if (message.status == "READ") Color(0xFF53BDEB) else AppMuted, fontSize = 11.sp)
+                    Text(
+                        when (message.status) {
+                            "READ", "DELIVERED" -> "✓✓"
+                            else -> "✓"
+                        },
+                        color = if (message.status == "READ") Color(0xFF53BDEB) else AppMuted,
+                        fontSize = 11.sp
+                    )
                 }
             }
             val reactionList = ChatFormatting.reactions(message.reactions)
@@ -704,20 +751,31 @@ private fun AttachmentPreview(icon: androidx.compose.ui.graphics.vector.ImageVec
 private fun MessageActionsDialog(
     message: MessageEntity, onDismiss: () -> Unit, onEdit: () -> Unit,
     onReply: () -> Unit, onReaction: (String) -> Unit, onDelete: () -> Unit,
-    onChangeDetails: () -> Unit
+    onChangeDetails: () -> Unit, onStatusChange: (String) -> Unit
 ) {
-    val emojis = listOf("❤️", "😂", "👍", "😮", "😢", "🙏")
+    val emojis = listOf("❤️", "😂", "👍", "😮", "😢", "🙏", "🔥", "🥹", "💀", "👏", "🤝", "✨")
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Message tools") },
+        title = { Text("Message options") },
         text = {
-            Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    emojis.forEach { emoji -> TextButton(onClick = { onReaction(emoji) }, contentPadding = PaddingValues(4.dp)) { Text(emoji, fontSize = 20.sp) } }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("React", color = AppMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                emojis.chunked(6).forEach { line ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        line.forEach { emoji -> TextButton(onClick = { onReaction(emoji) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text(emoji, fontSize = 20.sp) } }
+                    }
                 }
-                TextButton(onClick = onReply) { Text("Reply to this message") }
-                TextButton(onClick = onEdit) { Text("Edit message text") }
-                TextButton(onClick = onChangeDetails) { Text("Change sender, date, time and status") }
+                TextButton(onClick = onReply) { Text("Reply") }
+                TextButton(onClick = onEdit) { Text("Edit message") }
+                TextButton(onClick = onChangeDetails) { Text("Edit sender, time, type and attachment") }
+                if (message.outgoing) {
+                    Text("Delivery status", color = AppMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FilterChip(selected = message.status == "SENT", onClick = { onStatusChange("SENT") }, label = { Text("Sent ✓", fontSize = 10.sp) })
+                        FilterChip(selected = message.status == "DELIVERED", onClick = { onStatusChange("DELIVERED") }, label = { Text("Delivered ✓✓", fontSize = 10.sp) })
+                    }
+                    FilterChip(selected = message.status == "READ", onClick = { onStatusChange("READ") }, label = { Text("Seen · blue ✓✓", fontSize = 10.sp) })
+                }
                 TextButton(onClick = onDelete) { Text("Delete message", color = Color(0xFFFF7777)) }
             }
         },
@@ -737,6 +795,108 @@ private fun EmojiPickerDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit)
             }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
+}
+
+private data class BatchMessageDraft(
+    val id: String = UUID.randomUUID().toString(),
+    val body: String = "",
+    val outgoing: Boolean = true,
+    val dateTime: String = ChatFormatting.dateTimeForEditor(System.currentTimeMillis()),
+    val status: String = "READ"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BatchMessageEditorDialog(
+    contact: ContactEntity,
+    onDismiss: () -> Unit,
+    onSave: (List<MessageEntity>) -> Unit
+) {
+    var drafts by remember { mutableStateOf(listOf(BatchMessageDraft(), BatchMessageDraft(outgoing = false))) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add messages") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Build a sequence. Each row becomes a separate message in this chat.", color = AppMuted, fontSize = 12.sp)
+                drafts.forEachIndexed { index, draft ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AppSurface2).padding(11.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Message ${index + 1}", color = AppAccent, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (drafts.size > 1) {
+                                IconButton(onClick = { drafts = drafts.filterIndexed { i, _ -> i != index } }, modifier = Modifier.size(30.dp)) {
+                                    Icon(Icons.Default.Delete, null, tint = AppMuted)
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            FilterChip(selected = draft.outgoing, onClick = { drafts = drafts.toMutableList().also { it[index] = draft.copy(outgoing = true) } }, label = { Text("You") })
+                            FilterChip(selected = !draft.outgoing, onClick = { drafts = drafts.toMutableList().also { it[index] = draft.copy(outgoing = false) } }, label = { Text(contact.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                        }
+                        OutlinedTextField(
+                            value = draft.body,
+                            onValueChange = { value -> drafts = drafts.toMutableList().also { it[index] = draft.copy(body = value) } },
+                            label = { Text("Message text") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2,
+                            maxLines = 4
+                        )
+                        OutlinedTextField(
+                            value = draft.dateTime,
+                            onValueChange = { value -> drafts = drafts.toMutableList().also { it[index] = draft.copy(dateTime = value) } },
+                            label = { Text("Date and time") },
+                            supportingText = { Text("yyyy-MM-dd HH:mm") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (draft.outgoing) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("SENT", "DELIVERED", "READ").forEach { status ->
+                                    FilterChip(
+                                        selected = draft.status == status,
+                                        onClick = { drafts = drafts.toMutableList().also { it[index] = draft.copy(status = status) } },
+                                        label = { Text(when (status) { "READ" -> "Seen"; "DELIVERED" -> "Delivered"; else -> "Sent" }, fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                OutlinedButton(
+                    onClick = { drafts = drafts + BatchMessageDraft(outgoing = drafts.lastOrNull()?.outgoing?.not() ?: false) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Add another message") }
+                error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (drafts.any { it.body.isBlank() }) {
+                    error = "Fill in every message or remove the empty row."
+                } else {
+                    val batch = drafts.map { draft ->
+                        MessageEntity(
+                            id = UUID.randomUUID().toString(),
+                            contactId = contact.id,
+                            body = draft.body.trim(),
+                            outgoing = draft.outgoing,
+                            timestamp = ChatFormatting.parseDateTime(draft.dateTime),
+                            status = if (draft.outgoing) draft.status else "READ"
+                        )
+                    }
+                    onSave(batch)
+                }
+            }) { Text("Add all ${drafts.size}") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -967,7 +1127,7 @@ private fun ContactInfoScreen(
                     Row(Modifier.fillMaxWidth().padding(horizontal = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                         ProfileAction(Icons.Default.Call, "Voice") { onNotify("Voice calls are not connected.") }
                         ProfileAction(Icons.Default.Videocam, "Video") { onNotify("Video calls are not connected.") }
-                        ProfileAction(Icons.Default.AttachMoney, "Pay") { onNotify("Payments are not available in this offline mockup.") }
+                        ProfileAction(Icons.Default.AttachMoney, "Pay") { onNotify("Payments are not available in this offline conversation editor.") }
                         ProfileAction(Icons.Default.Search, "Search") { showSearch = true }
                     }
                 }
@@ -1081,15 +1241,15 @@ private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onC
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text("Whatsupp", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Chat mockup studio · Local only", color = AppMuted, fontSize = 12.sp)
+                    Text("Conversation editor · Local only", color = AppMuted, fontSize = 12.sp)
                 }
             }
         }
         Divider(color = Color(0xFF27343A))
         ProfileInfoRow(Icons.Default.Contacts, "Contacts and chat profiles", "Create, import, edit or delete local contacts", onManageContacts)
-        ProfileInfoRow(Icons.Default.Wallpaper, "Chat appearance", "WhatsApp-inspired dark layout") { }
+        ProfileInfoRow(Icons.Default.Wallpaper, "Chat appearance", "Dark conversation layout") { }
         ProfileInfoRow(Icons.Default.Shield, "Privacy and safety", "No messaging, calling or internet permission") { }
-        ProfileInfoRow(Icons.Default.Info, "About", "All conversations are fictional/local mockups") { }
+        ProfileInfoRow(Icons.Default.Info, "About", "Conversation edits stay on this device") { }
         Spacer(Modifier.weight(1f))
         Button(onClick = { showConfirm = true }, modifier = Modifier.fillMaxWidth().padding(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B3030))) {
             Icon(Icons.Default.Delete, null); Spacer(Modifier.width(8.dp)); Text("Clear all local data")
@@ -1100,7 +1260,7 @@ private fun SettingsScreen(onBack: () -> Unit, onManageContacts: () -> Unit, onC
         AlertDialog(
             onDismissRequest = { showConfirm = false },
             title = { Text("Clear everything?") },
-            text = { Text("This permanently deletes all locally saved contacts and simulated messages from this app.") },
+            text = { Text("This permanently deletes all locally saved contacts and local messages from this app.") },
             confirmButton = { TextButton(onClick = { showConfirm = false; onClearData() }) { Text("Clear data", color = Color(0xFFFF7777)) } },
             dismissButton = { TextButton(onClick = { showConfirm = false }) { Text("Cancel") } }
         )
