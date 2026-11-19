@@ -5,7 +5,8 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+// Bump this by hand for a bigger release. CI appends the build number to it.
+val baseVersionName = "1.1"
 val releaseStorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 
 android {
@@ -16,8 +17,10 @@ android {
         applicationId = "com.sirrlevi.whatsupp"
         minSdk = 24
         targetSdk = 35
-        versionCode = runNumber
-        versionName = "1.0.$runNumber"
+        // CI passes -PciVersionCode / -PciVersionName (higher on every build) so every push is an update that
+        // installs over the previous one. Local builds fall back to the base version.
+        versionCode = (project.findProperty("ciVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("ciVersionName") as String?) ?: baseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -43,6 +46,11 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {

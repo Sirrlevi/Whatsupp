@@ -98,6 +98,12 @@ import com.sirrlevi.whatsupp.data.ContactEntity
 import com.sirrlevi.whatsupp.data.MessageEntity
 import com.sirrlevi.whatsupp.data.WhatsuppDatabase
 import com.sirrlevi.whatsupp.ui.ChatFormatting
+import com.sirrlevi.whatsupp.ui.PrankFrame
+import com.sirrlevi.whatsupp.update.UpdateController
+import com.sirrlevi.whatsupp.update.UpdateDialog
+import com.sirrlevi.whatsupp.update.UpdateUiState
+import com.sirrlevi.whatsupp.update.summary
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -184,6 +190,23 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
     var defaultWallpaperUri by remember { mutableStateOf(WallpaperState.defaultUri) }
     var snackbarText by remember { mutableStateOf<String?>(null) }
     val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
+    val updateController = remember { UpdateController(context.applicationContext, scope) }
+    val updateState by updateController.state.collectAsState()
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var dismissedUpdateCode by remember { mutableStateOf(0L) }
+
+    // Look for a new build whenever the app opens or comes back to the front.
+    LifecycleResumeEffect(Unit) {
+        updateController.onAppResumed()
+        onPauseOrDispose { }
+    }
+    // A newer build was found: open the update dialog once per version (until the user dismisses it).
+    LaunchedEffect(updateState) {
+        val available = updateState as? UpdateUiState.Available
+        if (available != null && available.info.versionCode != dismissedUpdateCode) {
+            showUpdateDialog = true
+        }
+    }
 
     LaunchedEffect(snackbarText) {
         snackbarText?.let {
@@ -207,6 +230,7 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHost) }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
+          PrankFrame(isDark = ThemeState.isDark) {
             when {
                 activeContact != null && route == "chat" -> ChatScreen(
                     contact = activeContact!!,
@@ -231,6 +255,8 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
                     onDelete = { contact -> scope.launch { database.contactDao().delete(contact.id); notify("Contact deleted") } }
                 )
                 route == "settings" -> SettingsScreen(
+                    updateSummary = updateState.summary(),
+                    onOpenUpdates = { showUpdateDialog = true },
                     themeMode = themeMode,
                     defaultWallpaperUri = defaultWallpaperUri,
                     onThemeModeChange = { selected ->
@@ -266,7 +292,18 @@ private fun WhatsuppApp(database: WhatsuppDatabase) {
                     onNotify = ::notify
                 )
             }
+          }
         }
+    }
+
+    if (showUpdateDialog) {
+        UpdateDialog(
+            controller = updateController,
+            onDismiss = {
+                (updateState as? UpdateUiState.Available)?.let { dismissedUpdateCode = it.info.versionCode }
+                showUpdateDialog = false
+            }
+        )
     }
 
     if (showNewContact) {
@@ -913,9 +950,6 @@ private fun ChatScreen(
                 modifier = Modifier.size(48.dp).clip(CircleShape).background(AppAccent)
             ) { Icon(if (composer.isBlank()) Icons.Default.Mic else Icons.AutoMirrored.Filled.Send, null, tint = Color.White) }
         }
-        Row(Modifier.fillMaxWidth().background(Color(0xFF101A20)).padding(vertical = 3.dp), horizontalArrangement = Arrangement.Center) {
-            Text("Whatsupp · Local composer", color = AppMuted, fontSize = 9.sp, letterSpacing = 0.2.sp)
-        }
     }
 
     if (showMessageEditor) {
@@ -1528,6 +1562,8 @@ private fun ProfileToggleRow(icon: androidx.compose.ui.graphics.vector.ImageVect
 
 @Composable
 private fun SettingsScreen(
+    updateSummary: String,
+    onOpenUpdates: () -> Unit,
     themeMode: String,
     defaultWallpaperUri: String?,
     onThemeModeChange: (String) -> Unit,
@@ -1564,7 +1600,8 @@ private fun SettingsScreen(
         Divider(color = Color(0xFF27343A))
         ProfileInfoRow(Icons.Default.Contacts, "Contacts and chat profiles", "Create, import, edit or delete local contacts", onManageContacts)
         ProfileInfoRow(Icons.Default.Chat, "Chats", "Theme, chat wallpapers and saved history") { showChatsDialog = true }
-        ProfileInfoRow(Icons.Default.Shield, "Privacy and safety", "No messaging, calling or internet permission") { }
+        ProfileInfoRow(Icons.Default.Update, "App updates", updateSummary, onOpenUpdates)
+        ProfileInfoRow(Icons.Default.Shield, "Privacy and safety", "No messaging or calling. Internet is used only to check for app updates.") { }
         ProfileInfoRow(Icons.Default.Info, "About", "Conversation edits stay on this device") { }
         Spacer(Modifier.weight(1f))
         Button(onClick = { showConfirm = true }, modifier = Modifier.fillMaxWidth().padding(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B3030))) {

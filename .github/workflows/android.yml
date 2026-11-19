@@ -6,36 +6,37 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # publish the APK to a GitHub Release
+
+concurrency:
+  group: whatsupp-android-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - name: Reassemble and validate complete Android project
-        shell: bash
+      # Every build gets a higher versionCode than the one before it, so Android treats it as an update
+      # and the in-app updater sees it. No manual version bump is needed per commit.
+      - name: Compute version
         run: |
-          set -euo pipefail
-          # Source is committed after the first successful bootstrap build.
-          # Only reconstruct the source bundle on an empty project checkout.
-          if [[ -f app/build.gradle.kts && -f app/src/main/AndroidManifest.xml ]]; then
-            echo "Complete source tree already exists; bootstrap extraction skipped."
-            exit 0
+          BASE=$(grep -Eo 'baseVersionName = "[^"]+"' app/build.gradle.kts | head -n 1 | cut -d '"' -f 2)
+          if [ -z "$BASE" ]; then
+            echo "::error::Could not read baseVersionName from app/build.gradle.kts"
+            exit 1
           fi
-          cat bootstrap/part-*.b64 | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/Whatsupp-project.zip"
-          unzip -t "$RUNNER_TEMP/Whatsupp-project.zip"
-          mkdir -p "$RUNNER_TEMP/whatsupp-src"
-          unzip -q "$RUNNER_TEMP/Whatsupp-project.zip" -d "$RUNNER_TEMP/whatsupp-src"
-          test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/build.gradle.kts"
-          test -f "$RUNNER_TEMP/whatsupp-src/Whatsupp/app/src/main/AndroidManifest.xml"
-          # Keep the authoritative workflow already checked out from the repository.
-          rm -rf "$RUNNER_TEMP/whatsupp-src/Whatsupp/.github"
-          cp -a "$RUNNER_TEMP/whatsupp-src/Whatsupp/." "$GITHUB_WORKSPACE/"
-          echo "Restored complete source tree."
+          echo "VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-java@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
@@ -58,85 +59,178 @@ jobs:
           test "$license_status" -eq 0
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Verify offline-only safety boundary
+      # This is a local chat editor: nothing may be sent to a real contact. The only network code allowed is the
+      # in-app update check (update/ package). The PRANK labels must stay wired into the app.
+      - name: Verify safety boundary and PRANK labels
+        shell: bash
         run: |
-          if grep -E '<uses-permission[^>]+android:name="android.permission.(INTERNET|SEND_SMS|CALL_PHONE|READ_CALL_LOG)"' app/src/main/AndroidManifest.xml; then
-            echo "Unexpected communication permission found" >&2
+          set -euo pipefail
+          MANIFEST=app/src/main/AndroidManifest.xml
+          SRC=app/src/main/java
+          if grep -E 'uses-permission[^>]+android:name="android.permission.(SEND_SMS|READ_SMS|RECEIVE_SMS|CALL_PHONE|READ_CALL_LOG|WRITE_CALL_LOG)"' "$MANIFEST"; then
+            echo "::error::Messaging or calling permission found"
             exit 1
           fi
-          if grep -R -E 'SmsManager|ACTION_SENDTO|ACTION_CALL|ACTION_DIAL' app/src/main/java; then
-            echo "Unexpected real messaging/calling integration found" >&2
+          if grep -R -n -E 'SmsManager|ACTION_SENDTO|ACTION_CALL|ACTION_DIAL|wa\.me|api\.whatsapp|com\.whatsapp' "$SRC"; then
+            echo "::error::Real messaging or calling integration found"
             exit 1
           fi
+          OFFENDERS=$(grep -R -l -E 'HttpURLConnection|java\.net\.URL|okhttp|WebView|URLConnection' "$SRC" | grep -v '/update/' || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Network code found outside the update package: $OFFENDERS"
+            exit 1
+          fi
+          grep -q 'PrankFrame(' "$SRC/com/sirrlevi/whatsupp/MainActivity.kt" \
+            || { echo "::error::PrankFrame is no longer wrapping the app"; exit 1; }
+          grep -q 'PrankWatermark()' "$SRC/com/sirrlevi/whatsupp/ui/PrankMark.kt" \
+            || { echo "::error::PRANK watermark layer is missing"; exit 1; }
+          grep -q 'PRANK APK' "$SRC/com/sirrlevi/whatsupp/ui/PrankMark.kt" \
+            || { echo "::error::PRANK header/footer text is missing"; exit 1; }
+          echo "Safety boundary and PRANK labels verified."
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest
+        run: gradle --stacktrace testDebugUnitTest
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      # One stable signing key for every build, so each new APK installs over the old one without uninstalling.
+      # Preferred: the four ANDROID_* repository secrets. Otherwise the key is created once and kept in a release of
+      # this PRIVATE repository (never in the source tree). A public repository must use secrets instead.
+      - name: Prepare stable signing key
+        shell: bash
+        env:
+          SECRET_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SECRET_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          REPO_IS_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/signing"
+          mkdir -p "$DIR"
+          KEYSTORE="$DIR/whatsupp-release.jks"
+          if [[ -n "$SECRET_KEYSTORE_BASE64" && -n "$SECRET_STORE_PASSWORD" && -n "$SECRET_KEY_ALIAS" && -n "$SECRET_KEY_PASSWORD" ]]; then
+            echo "Using the signing key from repository secrets."
+            echo "$SECRET_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+            STORE_PASSWORD="$SECRET_STORE_PASSWORD"
+            KEY_ALIAS="$SECRET_KEY_ALIAS"
+            KEY_PASSWORD="$SECRET_KEY_PASSWORD"
+          else
+            if [[ "$REPO_IS_PRIVATE" != "true" ]]; then
+              echo "::error::This repository is public, so the signing key must not be stored in a release. Add the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets (see SIGNING_SETUP.md)."
+              exit 1
+            fi
+            TAG=signing-key-private
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release download "$TAG" --pattern whatsupp-release.jks --dir "$DIR" --clobber
+              gh release download "$TAG" --pattern signing.env --dir "$DIR" --clobber
+              echo "Restored the stable signing key from the private release."
+            else
+              GENERATED_PASSWORD=$(openssl rand -hex 24)
+              echo "::add-mask::$GENERATED_PASSWORD"
+              keytool -genkeypair -noprompt \
+                -keystore "$KEYSTORE" \
+                -storepass "$GENERATED_PASSWORD" \
+                -keypass "$GENERATED_PASSWORD" \
+                -alias whatsupp-release \
+                -dname "CN=Whatsupp, O=Sirrlevi, C=IN" \
+                -keyalg RSA -keysize 2048 -validity 10000
+              printf 'ANDROID_KEYSTORE_PASSWORD=%s\nANDROID_KEY_PASSWORD=%s\nANDROID_KEY_ALIAS=whatsupp-release\n' \
+                "$GENERATED_PASSWORD" "$GENERATED_PASSWORD" > "$DIR/signing.env"
+              gh release create "$TAG" "$KEYSTORE" "$DIR/signing.env" \
+                --title "Signing key (private repository only)" \
+                --notes "Stable signing key for Whatsupp updates. Never make this repository public while this release exists." \
+                --prerelease --target "$GITHUB_SHA"
+              echo "Created the first stable signing key."
+            fi
+            STORE_PASSWORD=$(grep '^ANDROID_KEYSTORE_PASSWORD=' "$DIR/signing.env" | cut -d= -f2-)
+            KEY_PASSWORD=$(grep '^ANDROID_KEY_PASSWORD=' "$DIR/signing.env" | cut -d= -f2-)
+            KEY_ALIAS=$(grep '^ANDROID_KEY_ALIAS=' "$DIR/signing.env" | cut -d= -f2-)
+          fi
+          echo "::add-mask::$STORE_PASSWORD"
+          echo "::add-mask::$KEY_PASSWORD"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE"
+            echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Signing certificate fingerprint:"
+          keytool -list -v -keystore "$KEYSTORE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | grep -E 'SHA256:' | head -n 1
 
-      - name: Upload installable debug APK
+      - name: Build signed release APK
+        run: gradle --stacktrace assembleRelease -PciVersionCode="$VERSION_CODE" -PciVersionName="$VERSION_NAME"
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            ls -R app/build/outputs/apk || true
+            echo "::error::Signed release APK was not produced (unsigned build?)"
+            exit 1
+          fi
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          cp "$APK" Whatsupp.apk
+          sha256sum Whatsupp.apk
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Whatsupp-debug-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Whatsupp-APK-${{ github.run_number }}
+          path: Whatsupp.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Expand full Android source tree in repository
+      # Rolling release: the tag always holds the newest APK plus the manifest the in-app updater reads.
+      - name: Publish latest APK to GitHub Release
+        shell: bash
         run: |
-          rm -rf bootstrap Whatsupp-bootstrap Whatsupp-source
-          rm -f Whatsupp-Android-Project.tar.xz
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "Add complete Whatsupp Android source tree"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
+          set -euo pipefail
+          LATEST_SHA=$(gh api "repos/$GITHUB_REPOSITORY/branches/$GITHUB_REF_NAME" --jq '.commit.sha')
+          if [ "$LATEST_SHA" != "$GITHUB_SHA" ]; then
+            echo "This run is stale; it will not replace the latest APK."
+            exit 0
           fi
-
-      - name: Check stable signing configuration
-        id: signing
-        env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+          TAG=latest-apk
+          APK_SHA256=$(sha256sum Whatsupp.apk | awk '{print $1}')
+          # The commit message becomes the "what's new" text shown next to the in-app Download button.
+          COMMIT_NOTES=$( { git log -1 --format=%B "$GITHUB_SHA" | sed -E '/^(Co-Authored-By|Claude-Session):/d' | head -c 600; } || true )
+          jq -n \
+            --arg pkg "com.sirrlevi.whatsupp" \
+            --argjson code "$VERSION_CODE" \
+            --arg name "$VERSION_NAME" \
+            --arg sha "$APK_SHA256" \
+            --arg notes "$COMMIT_NOTES" \
+            --arg commit "$GITHUB_SHA" \
+            '{packageName: $pkg, versionCode: $code, versionName: $name, sha256: $sha, notes: $notes, commit: $commit}' > whatsupp-update.json
+          RELEASE_NOTES="Whatsupp $VERSION_NAME (versionCode $VERSION_CODE) - commit ${GITHUB_SHA::7}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Whatsupp latest APK" --notes "$RELEASE_NOTES" --latest
           else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Stable signing secrets are not configured; no signed release is published." >> "$GITHUB_STEP_SUMMARY"
+            gh release create "$TAG" --title "Whatsupp latest APK" --notes "$RELEASE_NOTES" --target "$GITHUB_SHA" --latest
           fi
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          gh release upload "$TAG" Whatsupp.apk whatsupp-update.json --clobber
+          {
+            echo "### Whatsupp $VERSION_NAME"
+            echo "- Direct APK: https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/Whatsupp.apk"
+            echo "- Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo "- APK SHA-256: \`$APK_SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Restore stable release keystore
-        if: steps.signing.outputs.ready == 'true'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/whatsupp-release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/whatsupp-release.jks" >> "$GITHUB_ENV"
-
-      - name: Build signed APK
-        if: steps.signing.outputs.ready == 'true'
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle assembleRelease
-
-      - name: Publish latest signed APK
-        if: steps.signing.outputs.ready == 'true'
-        uses: softprops/action-gh-release@v2
+      - name: Upload test reports (only when something failed)
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Whatsupp Latest APK
-          files: app/build/outputs/apk/release/app-release.apk
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Whatsupp-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 3
