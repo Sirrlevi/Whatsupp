@@ -2,7 +2,6 @@ package com.sirrlevi.whatsupp.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
