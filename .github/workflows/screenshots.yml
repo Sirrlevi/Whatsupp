@@ -1,0 +1,97 @@
+name: Whatsupp UI renders
+
+# Draws the chat screen with sample text on GitHub's servers (Robolectric + Compose) and publishes the pictures, so the
+# layout can be compared pixel by pixel with the reference screenshots. Runs only for ui-* branches; it never builds or
+# publishes an APK.
+on:
+  push:
+    branches: ['ui-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # publish the pictures to a prerelease
+
+concurrency:
+  group: whatsupp-ui-renders-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK without deprecated tools package
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER" && test -x "$SDKMANAGER"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$license_status" -eq 0
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Render the UI
+        run: gradle --stacktrace -Pscreenshots=true testDebugUnitTest
+
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-renders-${{ github.run_number }}
+          path: app/build/ui-renders/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Always the same prerelease, so the newest pictures are at a fixed place.
+      - name: Publish renders to the ui-renders prerelease
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=(app/build/ui-renders/*.png)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No pictures were produced."
+            exit 0
+          fi
+          TAG=ui-renders
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --title "UI renders" \
+              --notes "Pictures drawn by the screenshots workflow, newest run only." --target "$GITHUB_SHA"
+          fi
+          gh release edit "$TAG" --notes "Run ${GITHUB_RUN_NUMBER}, commit ${GITHUB_SHA::7}"
+          gh release upload "$TAG" "${FILES[@]}" --clobber
+
+      - name: Upload test reports (only when something failed)
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-render-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 3

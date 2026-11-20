@@ -69,6 +69,23 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// The Robolectric render tests (package ...screenshots) are slow and only run when -Pscreenshots=true is passed
+// (see .github/workflows/screenshots.yml). Normal builds run every other unit test.
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "2g"
+    if (project.findProperty("screenshots") == "true") {
+        filter.includeTestsMatching("com.sirrlevi.whatsupp.screenshots.*")
+    } else {
+        filter.excludeTestsMatching("com.sirrlevi.whatsupp.screenshots.*")
+    }
 }
 
 dependencies {
@@ -92,6 +109,12 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     testImplementation("junit:junit:4.13.2")
+    // UI render tests (screenshots workflow only): Compose drawn by Robolectric's native graphics.
+    testImplementation(composeBom)
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
