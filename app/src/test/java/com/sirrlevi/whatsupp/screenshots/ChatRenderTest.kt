@@ -3,6 +3,7 @@ package com.sirrlevi.whatsupp.screenshots
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,6 +21,7 @@ import com.sirrlevi.whatsupp.ui.WaBubble
 import com.sirrlevi.whatsupp.ui.WaChatItem
 import com.sirrlevi.whatsupp.ui.WaChatScaffold
 import com.sirrlevi.whatsupp.ui.WaDensityRoot
+import com.sirrlevi.whatsupp.ui.WaDoodleWallpaper
 import com.sirrlevi.whatsupp.ui.WaInputBar
 import com.sirrlevi.whatsupp.ui.WaMessageList
 import com.sirrlevi.whatsupp.ui.WaPalettes
@@ -47,8 +49,15 @@ class ChatRenderTest {
     val rule = createComposeRule()
 
     private fun render(name: String, content: @Composable () -> Unit) {
-        rule.setContent { WaDensityRoot { content() } }
-        rule.waitForIdle()
+        // Drive the clock by hand: nothing may wait for "idle", so an endless animation cannot hang the test.
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            WaDensityRoot {
+                CompositionLocalProvider(LocalWaPalette provides WaPalettes.Dark) { content() }
+            }
+        }
+        repeat(8) { rule.mainClock.advanceTimeByFrame() }
+        rule.mainClock.advanceTimeBy(400)
         val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
         val dir = File(System.getProperty("user.dir"), "build/ui-renders").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -87,30 +96,66 @@ class ChatRenderTest {
     )
 
     @Test
-    fun chatScreenDark() {
-        render("chat_dark") {
-            CompositionLocalProvider(LocalWaPalette provides WaPalettes.Dark) {
-                WaChatScaffold(
-                    topInset = Modifier.height(87.px),
-                    bottomInset = Modifier,
-                    topBar = {
-                        WaTopBar(
-                            name = "Sam Taylor",
-                            subtitle = null,
-                            onBack = {}, onProfile = {}, onVideo = {}, onCall = {}, onMore = {},
-                            avatar = { mod -> Box(mod.background(Color(0xFF5B6B73))) }
-                        )
-                    },
-                    list = { mod -> WaMessageList(items, rememberLazyListState(), {}, mod) },
-                    inputBar = { WaInputBar("", {}, {}, {}, {}, {}) },
-                    overlay = {
-                        WaScrollFab(
-                            2, {},
-                            Modifier.align(Alignment.BottomEnd).padding(end = 33.25f.px, bottom = 51.75f.px)
-                        )
-                    }
-                )
+    fun a_plainBox() {
+        render("a_plain") { Box(Modifier.fillMaxSize().background(Color(0xFF030708))) }
+    }
+
+    @Test
+    fun b_wallpaper() {
+        render("b_wallpaper") { WaDoodleWallpaper(Modifier.fillMaxSize()) }
+    }
+
+    @Test
+    fun c_topBar() {
+        render("c_topbar") {
+            Box(Modifier.fillMaxSize().background(Color(0xFF030708))) { sampleTopBar() }
+        }
+    }
+
+    @Test
+    fun d_inputBar() {
+        render("d_inputbar") {
+            Box(Modifier.fillMaxSize().background(Color(0xFF030708))) {
+                Box(Modifier.align(Alignment.BottomStart)) { WaInputBar("", {}, {}, {}, {}, {}) }
             }
         }
+    }
+
+    @Test
+    fun e_messages() {
+        render("e_messages") {
+            Box(Modifier.fillMaxSize().background(Color(0xFF030708))) {
+                WaMessageList(items, rememberLazyListState(), {}, Modifier.fillMaxSize())
+            }
+        }
+    }
+
+    @Test
+    fun f_chatScreenDark() {
+        render("chat_dark") {
+            WaChatScaffold(
+                topInset = Modifier.height(87.px),
+                bottomInset = Modifier,
+                topBar = { sampleTopBar() },
+                list = { mod -> WaMessageList(items, rememberLazyListState(), {}, mod) },
+                inputBar = { WaInputBar("", {}, {}, {}, {}, {}) },
+                overlay = {
+                    WaScrollFab(
+                        2, {},
+                        Modifier.align(Alignment.BottomEnd).padding(end = 33.25f.px, bottom = 51.75f.px)
+                    )
+                }
+            )
+        }
+    }
+
+    @Composable
+    private fun sampleTopBar() {
+        WaTopBar(
+            name = "Sam Taylor",
+            subtitle = null,
+            onBack = {}, onProfile = {}, onVideo = {}, onCall = {}, onMore = {},
+            avatar = { mod -> Box(mod.background(Color(0xFF5B6B73))) }
+        )
     }
 }

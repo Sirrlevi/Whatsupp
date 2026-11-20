@@ -57,6 +57,17 @@ jobs:
       - name: Render the UI
         run: gradle --stacktrace -Pscreenshots=true testDebugUnitTest
 
+      - name: Show test results
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+            echo "=== $f"
+            head -c 20000 "$f"
+            echo
+          done
+
       - name: Upload renders
         if: always()
         uses: actions/upload-artifact@v4
