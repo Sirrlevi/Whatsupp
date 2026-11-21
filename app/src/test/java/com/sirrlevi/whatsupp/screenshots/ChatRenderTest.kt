@@ -120,14 +120,14 @@ class ChatRenderTest {
 
     private val items = listOf(
         WaChatItem.Day("Today"),
-        msg("1", false, "Hey, are you free this evening?", "6:41 pm", 27.5f, true),
-        msg("2", true, "Yes, after seven works for me", "6:42 pm", 27.5f, true),
-        msg("3", true, "Where should we meet?", "6:42 pm", 4f, false, status = "DELIVERED"),
-        msg("4", false, longText, "6:44 pm", 27.5f, true),
-        msg("5", true, "Sounds perfect, I will call them now", "6:45 pm", 27.5f, true, quote = WaQuote("Sam", false, longText)),
-        msg("6", false, "Great, see you there", "6:46 pm", 27.5f, true, reactions = listOf("👍")),
-        msg("7", true, "Ok", "6:47 pm", 27.5f, true, status = "SENT"),
-        msg("8", true, "Running ten minutes late, sorry about that. Start without me if you are hungry", "6:58 pm", 4f, false, edited = true)
+        msg("1", false, "Hey, are you free this evening?", "6:41 PM", 27.5f, true),
+        msg("2", true, "Yes, after seven works for me", "6:42 PM", 27.5f, true),
+        msg("3", true, "Where should we meet?", "6:42 PM", 4f, false, status = "DELIVERED"),
+        msg("4", false, longText, "6:44 PM", 27.5f, true),
+        msg("5", true, "Sounds perfect, I will call them now", "6:45 PM", 27.5f, true, quote = WaQuote("Sam", false, longText)),
+        msg("6", false, "Great, see you there", "6:46 PM", 27.5f, true, reactions = listOf("👍")),
+        msg("7", true, "Ok", "6:47 PM", 27.5f, true, status = "SENT"),
+        msg("8", true, "Running ten minutes late, sorry about that. Start without me if you are hungry", "6:58 PM", 4f, false, edited = true)
     )
 
     @Test

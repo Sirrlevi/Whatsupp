@@ -173,10 +173,10 @@ internal fun WaInputBar(
                 .background(p.pill, RoundedCornerShape(67.px))
         ) {
             Box(
-                Modifier.align(Alignment.CenterStart).offset(x = (87.5f - 21f - 66f / 2f).px).size(66.px).clip(CircleShape).clickable(onClick = onEmoji),
+                Modifier.align(Alignment.CenterStart).offset(x = (88f - 21f - 33f).px).size(66.px).clip(CircleShape).clickable(onClick = onEmoji),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.EmojiEmotions, contentDescription = "Emoji", tint = p.secondary, modifier = Modifier.size(66.px))
+                WaStickerIcon(p.secondary)
             }
             Box(
                 Modifier
@@ -200,37 +200,21 @@ internal fun WaInputBar(
                 )
             }
             Box(
-                Modifier.align(Alignment.CenterStart).offset(x = (569f - 21f - 33f).px).size(66.px).clip(CircleShape).clickable(onClick = onAttach),
+                Modifier.align(Alignment.CenterStart).offset(x = (570f - 21f - 33f).px).size(66.px).clip(CircleShape).clickable(onClick = onAttach),
                 contentAlignment = Alignment.Center
             ) {
                 attachMenu()
-                Icon(Icons.Outlined.AttachFile, contentDescription = "Attach", tint = p.secondary, modifier = Modifier.size(66.px).rotate(45f))
+                WaPaperclipIcon(p.secondary)
             }
             if (empty) {
                 Box(
-                    Modifier.align(Alignment.CenterStart).offset(x = (701.5f - 21f - 33f).px).size(66.px),
+                    Modifier.align(Alignment.CenterStart).offset(x = (702.75f - 21f - 33f).px).size(66.px),
                     contentAlignment = Alignment.Center
-                ) {
-                    Canvas(Modifier.size(56.px)) {
-                        val s = size.width / 56f
-                        drawCircle(p.secondary, radius = 25f * s, style = Stroke(width = 4.5f * s))
-                        // rupee sign
-                        val rp = Path().apply {
-                            moveTo(19f * s, 17f * s); lineTo(37f * s, 17f * s)
-                            moveTo(19f * s, 24f * s); lineTo(37f * s, 24f * s)
-                            moveTo(19f * s, 17f * s)
-                            cubicTo(32f * s, 17f * s, 32f * s, 31f * s, 20f * s, 31f * s)
-                            lineTo(32f * s, 42f * s)
-                        }
-                        drawPath(rp, p.secondary, style = Stroke(width = 3.6f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    }
-                }
+                ) { WaRupeeIcon(p.secondary) }
                 Box(
-                    Modifier.align(Alignment.CenterStart).offset(x = (834.5f - 21f - 33f).px).size(66.px).clip(CircleShape).clickable(onClick = onCamera),
+                    Modifier.align(Alignment.CenterStart).offset(x = (834.8f - 21f - 33f).px).size(66.px).clip(CircleShape).clickable(onClick = onCamera),
                     contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Outlined.PhotoCamera, contentDescription = "Camera", tint = p.secondary, modifier = Modifier.size(66.px))
-                }
+                ) { WaCameraIcon(p.secondary) }
             }
         }
         Box(

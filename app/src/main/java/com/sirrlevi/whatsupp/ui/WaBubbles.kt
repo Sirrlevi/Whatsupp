@@ -133,25 +133,33 @@ internal class WaBubbleShape(private val outgoing: Boolean, private val tail: Bo
     }
 }
 
-private const val TICK_W = 45.5f
-private const val TICK_H = 29.5f
+private const val TICK_W = 45f
+private const val TICK_H = 28f
 
-/** The delivery ticks: one check for sent, two for delivered, two blue ones for seen. */
+/**
+ * The delivery ticks: one check for sent, two for delivered, two blue ones for seen. The geometry was fitted to the
+ * reference screenshot: round 4 px strokes, and the second check of the pair only keeps a short left stub.
+ */
 @Composable
 internal fun WaTicks(status: String, color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier.size(TICK_W.px, TICK_H.px)) {
         val s = size.width / TICK_W
-        val stroke = Stroke(width = 4.5f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        fun check(dx: Float): Path = Path().apply {
-            moveTo((3f + dx) * s, 17.5f * s)
-            lineTo((10.5f + dx) * s, 27f * s)
-            lineTo((28.5f + dx) * s, 2.5f * s)
+        val stroke = Stroke(width = 3.97f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        fun first(dx: Float): Path = Path().apply {
+            moveTo((2.75f + dx) * s, 16.91f * s)
+            lineTo((11.10f + dx) * s, 25.17f * s)
+            lineTo((28.61f + dx) * s, 2.50f * s)
         }
         if (status == "SENT") {
-            drawPath(check(14f), color, style = stroke)
+            drawPath(first(13.55f), color, style = stroke)
         } else {
-            drawPath(check(0f), color, style = stroke)
-            drawPath(check(14f), color, style = stroke)
+            drawPath(first(0f), color, style = stroke)
+            val second = Path().apply {
+                moveTo(21.93f * s, 22.50f * s)
+                lineTo(24.66f * s, 25.22f * s)
+                lineTo(42.14f * s, 2.61f * s)
+            }
+            drawPath(second, color, style = stroke)
         }
     }
 }
@@ -181,9 +189,9 @@ internal fun WaMeta(
         val timeP = measurables[0].measure(Constraints())
         val tickP = measurables.getOrNull(1)?.measure(Constraints())
         val baseline = timeP[LastBaseline]
-        val tickAbove = (26.5f * s).roundToInt()
-        val tickBelow = (3f * s).roundToInt()
-        val gap = (15.7f * s).roundToInt()
+        val tickAbove = (25.5f * s).roundToInt()
+        val tickBelow = (2.5f * s).roundToInt()
+        val gap = (14f * s).roundToInt()
         val above = max(baseline, if (tickP != null) tickAbove else 0)
         val below = max(timeP.height - baseline, if (tickP != null) tickBelow else 0)
         val width = timeP.width + if (tickP != null) gap + tickP.width else 0
@@ -296,7 +304,7 @@ internal fun WaTextBubbleBody(
         val inset = r(11f)
         val maxBubble = min(r(BUBBLE_MAX_WIDTH), constraints.maxWidth)
         val metaP = metaM.measure(Constraints())
-        val metaInsetR = if (outgoing) r(25.5f) else r(23.2f)
+        val metaInsetR = if (outgoing) r(24f) else r(23.2f)
         val metaGap = if (outgoing) r(23.5f) else r(40f)
         val textMax = maxBubble - padL - padR
 
