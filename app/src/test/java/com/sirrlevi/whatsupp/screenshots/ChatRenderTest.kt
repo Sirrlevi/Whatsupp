@@ -1,6 +1,10 @@
 package com.sirrlevi.whatsupp.screenshots
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
+import android.view.ViewGroup
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,10 +16,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.sirrlevi.whatsupp.ui.LocalWaPalette
 import com.sirrlevi.whatsupp.ui.WaBubble
 import com.sirrlevi.whatsupp.ui.WaChatItem
@@ -46,7 +47,26 @@ import java.io.File
 @Config(sdk = [34], qualifiers = "w270dp-h602dp-640dpi")
 class ChatRenderTest {
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun dump(v: View, depth: Int) {
+        println("VIEW " + "  ".repeat(depth) + v.javaClass.name + " " + v.width + "x" + v.height + " attached=" + v.isAttachedToWindow)
+        if (v is ViewGroup) for (i in 0 until v.childCount) dump(v.getChildAt(i), depth + 1)
+    }
+
+    /** Compose's test rule switches drawing off; turn it back on for every Compose view so a plain draw() paints it. */
+    private fun enableDrawing(v: View) {
+        if (v.javaClass.name.startsWith("androidx.compose.ui.platform.AndroidComposeView")) {
+            try {
+                val setter = v.javaClass.methods.firstOrNull { it.name == "setDrawingEnabled" && it.parameterTypes.size == 1 }
+                setter?.invoke(v, true)
+                println("DRAWING setter=" + (setter != null))
+            } catch (e: Throwable) {
+                println("DRAWING failed " + e)
+            }
+        }
+        if (v is ViewGroup) for (i in 0 until v.childCount) enableDrawing(v.getChildAt(i))
+    }
 
     private fun render(name: String, content: @Composable () -> Unit) {
         // Drive the clock by hand: nothing may wait for "idle", so an endless animation cannot hang the test.
@@ -58,7 +78,22 @@ class ChatRenderTest {
         }
         repeat(8) { rule.mainClock.advanceTimeByFrame() }
         rule.mainClock.advanceTimeBy(400)
-        val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
+
+        // Compose's own captureToImage() waits for a frame that never comes while the test thread is the main
+        // thread, so paint the window into a bitmap directly.
+        val decor = rule.activity.window.decorView
+        println("DECOR " + decor.width + "x" + decor.height)
+        dump(decor, 0)
+        if (decor.width != WIDTH || decor.height != HEIGHT) {
+            decor.measure(
+                View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY)
+            )
+            decor.layout(0, 0, WIDTH, HEIGHT)
+        }
+        enableDrawing(decor)
+        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        decor.draw(Canvas(bitmap))
         val dir = File(System.getProperty("user.dir"), "build/ui-renders").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         println("RENDERED $name ${bitmap.width}x${bitmap.height}")
@@ -157,5 +192,10 @@ class ChatRenderTest {
             onBack = {}, onProfile = {}, onVideo = {}, onCall = {}, onMore = {},
             avatar = { mod -> Box(mod.background(Color(0xFF5B6B73))) }
         )
+    }
+
+    private companion object {
+        const val WIDTH = 1080
+        const val HEIGHT = 2408
     }
 }
